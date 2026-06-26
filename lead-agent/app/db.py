@@ -225,3 +225,100 @@ def fetch_lead_by_id(owner_phone: str, lead_id: int) -> Optional[dict]:
     with get_connection() as conn:
         row = conn.execute(query, (lead_id, owner_phone)).fetchone()
     return _row_to_dict(row) if row else None
+
+
+def insert_lead(
+    owner_phone: str,
+    name: str,
+    phone: str,
+    source: str,
+    notes: Optional[str] = None,
+    status: str = "new",
+) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO leads (
+                owner_phone, name, phone, source, status, notes,
+                last_contacted_at, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+            """,
+            (owner_phone, name, phone, source, status, notes, now),
+        )
+        return int(cursor.lastrowid)
+
+
+def update_lead_status(owner_phone: str, lead_id: int, new_status: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leads
+            SET status = ?
+            WHERE id = ? AND owner_phone = ?
+            """,
+            (new_status, lead_id, owner_phone),
+        )
+        return cursor.rowcount > 0
+
+
+def append_lead_note(owner_phone: str, lead_id: int, note_line: str) -> bool:
+    lead = fetch_lead_by_id(owner_phone, lead_id)
+    if lead is None:
+        return False
+
+    existing = lead.get("notes") or ""
+    if existing:
+        updated_notes = f"{existing}\n{note_line}"
+    else:
+        updated_notes = note_line
+
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leads
+            SET notes = ?
+            WHERE id = ? AND owner_phone = ?
+            """,
+            (updated_notes, lead_id, owner_phone),
+        )
+        return cursor.rowcount > 0
+
+
+def update_last_contacted_at(owner_phone: str, lead_id: int) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leads
+            SET last_contacted_at = ?
+            WHERE id = ? AND owner_phone = ?
+            """,
+            (now, lead_id, owner_phone),
+        )
+        return cursor.rowcount > 0
+
+
+def log_action(owner_phone: str, action: str, details: str) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO action_log (owner_phone, action, details)
+            VALUES (?, ?, ?)
+            """,
+            (owner_phone, action, details),
+        )
+        return int(cursor.lastrowid)
+
+
+def fetch_action_log(owner_phone: str) -> list[dict]:
+    query = """
+        SELECT id, owner_phone, action, details, timestamp
+        FROM action_log
+        WHERE owner_phone = ?
+        ORDER BY timestamp ASC
+    """
+    with get_connection() as conn:
+        rows = conn.execute(query, (owner_phone,)).fetchall()
+    return [_row_to_dict(row) for row in rows]

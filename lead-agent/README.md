@@ -1,95 +1,226 @@
-# WhatsApp Lead Management Agent
+# LeadAgent — WhatsApp Lead Management Agent (MCP-powered)
 
-A WhatsApp bot for small business owners to manage sales leads via plain English/Hindi messages. Built with FastAPI, SQLite, the official MCP Python SDK, and Groq.
+**AI agent for Indian SMBs to manage sales leads via WhatsApp in plain English/Hindi.**
 
-## Current status
+LeadAgent lets a small business owner text a WhatsApp bot like they'd text an employee — *"which leads haven't I called in 2 days?"*, *"mark Ramesh as converted"*, *"send a follow-up to Priya"* — and get safe, auditable results. No app, no dashboard, no login.
 
-**Steps 1–2 complete:** SQLite schema, seed data, and four MCP read tools (`list_leads`, `get_stale_leads`, `search_leads`, `get_lead_details`).
+Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent loop** that decides which tools to call, and a **FastAPI webhook** wired to Meta's WhatsApp Cloud API. Every write that matters asks for confirmation first. Every query is scoped to one owner's phone number.
 
-## Setup
+---
+
+## Architecture
+
+```
+┌─────────────────┐     webhook      ┌──────────────────┐
+│  Business Owner │ ───────────────► │  FastAPI         │
+│  (WhatsApp)     │ ◄─────────────── │  POST /webhook   │
+└─────────────────┘    reply via     └────────┬─────────┘
+                         Graph API              │
+                                                ▼
+                                     ┌──────────────────┐
+                                     │  Groq Agent Loop │
+                                     │  (tool-calling)  │
+                                     │  openai/gpt-oss  │
+                                     │  -120b           │
+                                     └────────┬─────────┘
+                                              │ calls
+                                              ▼
+                                     ┌──────────────────┐
+                                     │  MCP Tools (×9)  │
+                                     │  read + write    │
+                                     └────────┬─────────┘
+                                              │
+                                              ▼
+                                     ┌──────────────────┐
+                                     │  SQLite (leads,  │
+                                     │  action_log)     │
+                                     └──────────────────┘
+```
+
+**Request flow:** WhatsApp message → HMAC-validated webhook → `handle_message()` → Groq selects MCP tools → SQLite read/write → confirmation gate for sends & terminal status changes → reply sent back on WhatsApp.
+
+---
+
+## Features
+
+- **Plain English/Hindi commands** — owners interact entirely over WhatsApp
+- **9 MCP tools** — 4 read (`list_leads`, `get_stale_leads`, `search_leads`, `get_lead_details`) + 5 write (`create_lead`, `update_lead_status`, `add_lead_note`, `draft_followup_message`, `send_whatsapp_message`)
+- **Confirmation flow** — destructive actions (send message, mark `converted`/`lost`) require an explicit YES before execution
+- **Owner isolation** — every query filters by `owner_phone`; one business cannot see or touch another's data
+- **Full audit log** — every write recorded in `action_log` with human-readable details
+- **Secure by design** — HMAC webhook validation, parameterized SQL only, scoped permissions, no stack traces to users
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| Language | Python 3.11+ |
+| API / Webhook | FastAPI + Uvicorn |
+| Agent protocol | MCP (official Python SDK, FastMCP) |
+| LLM | Groq API — `openai/gpt-oss-120b` (OpenAI-compatible tool calling) |
+| Messaging | Meta WhatsApp Cloud API |
+| Database | SQLite (`leads.db`) |
+| Rate limiting | slowapi (30 req/min on webhook) |
+| Hosting target | Render.com |
+
+---
+
+## Local development
+
+### 1. Clone and install
 
 ```bash
-cd lead-agent
+git clone https://github.com/ayushanand27/mcp-build.git
+cd mcp-build/lead-agent
+
 python -m venv .venv
 
 # Windows
 .venv\Scripts\activate
 
-# macOS/Linux
+# macOS / Linux
 source .venv/bin/activate
 
 pip install -r requirements.txt
-cp .env.example .env   # fill in keys when wiring WhatsApp/Groq (not needed for read-tool test)
 ```
 
-## Test locally (read tools)
+### 2. Configure environment
+
+```bash
+copy .env.example .env   # Windows
+# cp .env.example .env   # macOS/Linux
+```
+
+Fill in all values (see table below). **Never commit `.env`.**
+
+### 3. Run tests
 
 ```bash
 python scripts/test_read_tools.py
-```
-
-This script will:
-
-1. Create `leads.db` with the `leads` and `action_log` tables
-2. Seed five sample leads for a test owner phone number
-3. Exercise all four read tools via both the service layer and MCP tool wrappers
-4. Verify owner isolation (owner B cannot read owner A's lead id=1)
-
-Run pytest for isolation tests:
-
-```bash
+python scripts/test_write_tools.py
+python scripts/test_agent.py      # requires GROQ_API_KEY
+python scripts/test_webhook.py
 pytest tests/ -v
 ```
 
-## Run the MCP server (stdio)
+### 4. Start the server
 
-The MCP server can be registered in Cursor or Claude Desktop:
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+- Health check: `http://localhost:8000/health`
+- Webhook: `http://localhost:8000/webhook` (use ngrok for Meta setup)
+
+### 5. Run MCP server standalone (optional)
 
 ```bash
 python -m app.mcp_server
 ```
 
-Or with the MCP dev inspector:
+Register in Cursor or Claude Desktop, or inspect with `mcp dev app/mcp_server.py`.
 
-```bash
-mcp dev app/mcp_server.py
-```
+---
 
 ## Environment variables
 
-See `.env.example`. Required later:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GROQ_API_KEY` | Yes | Groq API key for the agent loop (`openai/gpt-oss-120b`) |
+| `WHATSAPP_TOKEN` | Yes | Meta permanent access token for sending messages |
+| `WHATSAPP_PHONE_NUMBER_ID` | Yes | WhatsApp Business phone number ID from Meta dashboard |
+| `WHATSAPP_VERIFY_TOKEN` | Yes | Arbitrary string for `GET /webhook` subscription verification |
+| `WHATSAPP_APP_SECRET` | Yes | App secret for `X-Hub-Signature-256` HMAC validation |
+| `DATABASE_PATH` | No | SQLite file path (default: `leads.db` in project root) |
 
-| Variable | Used in |
-|----------|---------|
-| `GROQ_API_KEY` | Agent loop (step 4) |
-| `WHATSAPP_TOKEN` | WhatsApp send/receive (step 5) |
-| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp send/receive (step 5) |
-| `WHATSAPP_VERIFY_TOKEN` | Webhook verification (step 5) |
-| `WHATSAPP_APP_SECRET` | Webhook signature validation (step 5) |
-| `DATABASE_PATH` | Optional SQLite path override |
+---
 
-## Project layout
+## Example WhatsApp commands
+
+| Owner sends | Agent does |
+|-------------|------------|
+| `list all my leads` | Returns a numbered list of leads with status |
+| `which leads haven't been contacted in 2 days?` | Calls `get_stale_leads` (excludes converted/lost) |
+| `mark Ramesh as converted` | Queues status update → asks YES → updates on confirm |
+| `send a follow up to Priya` | Drafts message → shows preview → sends only after YES |
+| `add note to Amit: called twice, no answer` | Appends timestamped note to Amit's lead |
+
+Hindi works too — the agent replies in the same language the owner uses.
+
+---
+
+## Security
+
+| Control | Implementation |
+|---------|----------------|
+| **Owner isolation** | Every `leads` / `action_log` query uses `WHERE owner_phone = ?`; lead writes use `WHERE id = ? AND owner_phone = ?` |
+| **Webhook authenticity** | `X-Hub-Signature-256` verified with `hmac.compare_digest` + `WHATSAPP_APP_SECRET` |
+| **Confirmation gate** | `send_whatsapp_message` and terminal status changes stored in `PendingActionStore` until owner confirms |
+| **Audit trail** | `action_log` records every write (`lead_created`, `status_updated`, `note_added`, `message_sent`) |
+| **Safe errors** | Generic messages to owners; details logged server-side only |
+| **SQL injection** | Parameterized queries only — no string-interpolated SQL |
+| **Rate limiting** | 30 requests/minute per IP on `POST /webhook` |
+
+Run isolation tests anytime:
+
+```bash
+pytest tests/test_owner_isolation.py -v
+```
+
+---
+
+## Project structure
 
 ```
 lead-agent/
 ├── app/
-│   ├── db.py              # SQLite schema + parameterized queries
-│   ├── lead_service.py    # Business logic for read (and later write) tools
-│   ├── mcp_server.py      # MCP server with tool definitions
-│   ├── models.py          # Pydantic models + tool input schemas
-│   ├── pending_actions.py # Confirmation flow store (stub for step 3)
-│   ├── agent.py           # Groq agent loop (step 4)
-│   ├── whatsapp.py        # Meta Cloud API (step 5)
-│   └── main.py            # FastAPI app (step 5)
+│   ├── main.py            # FastAPI webhook + health routes
+│   ├── agent.py           # Groq agent loop + confirmation flow
+│   ├── mcp_server.py      # MCP server (9 tools)
+│   ├── lead_service.py    # Business logic layer
+│   ├── db.py              # SQLite schema + queries
+│   ├── models.py          # Pydantic models + tool schemas
+│   ├── pending_actions.py # In-memory confirmation store
+│   └── whatsapp.py        # Meta Cloud API helpers
 ├── scripts/
-│   └── test_read_tools.py # Local read-tool smoke test
-└── tests/
-    └── test_owner_isolation.py
+│   ├── test_read_tools.py
+│   ├── test_write_tools.py
+│   ├── test_agent.py
+│   └── test_webhook.py
+├── tests/
+│   └── test_owner_isolation.py
+├── requirements.txt
+└── .env.example
 ```
 
-## Next steps
+---
 
-3. Write tools + `PendingActionStore` confirmation logic  
-4. Groq agent loop with defensive tool-call validation  
-5. FastAPI webhook + WhatsApp Cloud API  
-6. Deploy to Render
+## Test results
+
+All local test suites passing:
+
+| Suite | Command | Status |
+|-------|---------|--------|
+| Read tools | `python scripts/test_read_tools.py` | Pass |
+| Write tools | `python scripts/test_write_tools.py` | Pass |
+| Agent loop | `python scripts/test_agent.py` | Pass |
+| Webhook | `python scripts/test_webhook.py` | Pass |
+| Owner isolation | `pytest tests/ -v` | 3/3 pass |
+
+---
+
+## Deployment (Render)
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Set all environment variables in the Render dashboard. Point Meta's webhook to `https://<your-app>.onrender.com/webhook`.
+
+---
+
+## License
+
+MIT

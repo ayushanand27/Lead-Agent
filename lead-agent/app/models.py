@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LeadStatus(str, Enum):
@@ -52,3 +52,46 @@ class SearchLeadsInput(BaseModel):
 class GetLeadDetailsInput(BaseModel):
     owner_phone: str = Field(..., description="WhatsApp number of the business owner")
     lead_id: int = Field(..., ge=1, description="Lead primary key")
+
+
+# --- MCP write-tool input schemas ---
+
+
+class CreateLeadInput(BaseModel):
+    owner_phone: str = Field(..., description="WhatsApp number of the business owner")
+    name: str = Field(..., min_length=1, description="Lead name")
+    phone: str = Field(..., min_length=1, description="Lead phone number")
+    source: str = Field(..., min_length=1, description="Lead source e.g. IndiaMART, Referral")
+    notes: Optional[str] = Field(None, description="Optional initial notes")
+
+
+class UpdateLeadStatusInput(BaseModel):
+    owner_phone: str = Field(..., description="WhatsApp number of the business owner")
+    lead_id: int = Field(..., ge=1, description="Lead primary key")
+    new_status: str = Field(..., description="New status value")
+
+    @field_validator("new_status")
+    @classmethod
+    def validate_new_status(cls, value: str) -> str:
+        if value not in LEAD_STATUS_VALUES:
+            allowed = ", ".join(sorted(LEAD_STATUS_VALUES))
+            raise ValueError(f"Invalid status. Allowed: {allowed}")
+        return value
+
+
+class AddLeadNoteInput(BaseModel):
+    owner_phone: str = Field(..., description="WhatsApp number of the business owner")
+    lead_id: int = Field(..., ge=1, description="Lead primary key")
+    note: str = Field(..., min_length=1, description="Note text to append")
+
+
+class DraftFollowupMessageInput(BaseModel):
+    owner_phone: str = Field(..., description="WhatsApp number of the business owner")
+    lead_id: int = Field(..., ge=1, description="Lead primary key")
+    tone: str = Field("friendly", description="Message tone e.g. friendly, formal, urgent")
+
+
+class SendWhatsappMessageInput(BaseModel):
+    owner_phone: str = Field(..., description="WhatsApp number of the business owner")
+    lead_id: int = Field(..., ge=1, description="Lead primary key")
+    message_text: str = Field(..., min_length=1, description="Message body to send to the lead")

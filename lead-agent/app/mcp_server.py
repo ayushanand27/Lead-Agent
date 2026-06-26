@@ -6,23 +6,33 @@ from mcp.server.fastmcp import FastMCP
 
 from app import lead_service
 from app.models import (
+    AddLeadNoteInput,
+    CreateLeadInput,
+    DraftFollowupMessageInput,
     GetLeadDetailsInput,
     GetStaleLeadsInput,
     ListLeadsInput,
     SearchLeadsInput,
+    SendWhatsappMessageInput,
+    UpdateLeadStatusInput,
 )
 
 mcp = FastMCP(
     "lead-agent",
     instructions=(
         "Tools for managing sales leads for a WhatsApp-based small business. "
-        "Every tool requires owner_phone — the business owner's WhatsApp number."
+        "Every tool requires owner_phone — the business owner's WhatsApp number. "
+        "Write tools that send messages or mark leads converted/lost require owner "
+        "confirmation in the agent loop before execution."
     ),
 )
 
 
 def _serialize(result: dict) -> str:
     return json.dumps(result, indent=2, default=str)
+
+
+# --- Read tools ---
 
 
 @mcp.tool(
@@ -69,6 +79,122 @@ def get_lead_details(owner_phone: str, lead_id: int) -> str:
     """Return detailed information for one lead."""
     params = GetLeadDetailsInput(owner_phone=owner_phone, lead_id=lead_id)
     return _serialize(lead_service.get_lead_details(params.owner_phone, params.lead_id))
+
+
+# --- Write tools ---
+
+
+@mcp.tool(
+    name="create_lead",
+    description="Create a new lead for the business owner.",
+)
+def create_lead(
+    owner_phone: str,
+    name: str,
+    phone: str,
+    source: str,
+    notes: str | None = None,
+) -> str:
+    """Add a new lead with status 'new'."""
+    params = CreateLeadInput(
+        owner_phone=owner_phone,
+        name=name,
+        phone=phone,
+        source=source,
+        notes=notes,
+    )
+    return _serialize(
+        lead_service.create_lead(
+            params.owner_phone,
+            params.name,
+            params.phone,
+            params.source,
+            params.notes,
+        )
+    )
+
+
+@mcp.tool(
+    name="update_lead_status",
+    description="Update a lead's status. Terminal states (converted, lost) need confirmation in the agent loop.",
+)
+def update_lead_status(owner_phone: str, lead_id: int, new_status: str) -> str:
+    """Change lead status to a valid enum value."""
+    params = UpdateLeadStatusInput(
+        owner_phone=owner_phone,
+        lead_id=lead_id,
+        new_status=new_status,
+    )
+    return _serialize(
+        lead_service.update_lead_status(
+            params.owner_phone,
+            params.lead_id,
+            params.new_status,
+        )
+    )
+
+
+@mcp.tool(
+    name="add_lead_note",
+    description="Append a timestamped note to a lead.",
+)
+def add_lead_note(owner_phone: str, lead_id: int, note: str) -> str:
+    """Add a note to an existing lead."""
+    params = AddLeadNoteInput(owner_phone=owner_phone, lead_id=lead_id, note=note)
+    return _serialize(
+        lead_service.add_lead_note(params.owner_phone, params.lead_id, params.note)
+    )
+
+
+@mcp.tool(
+    name="draft_followup_message",
+    description="Draft a WhatsApp follow-up message for a lead using Groq. Does NOT send the message.",
+)
+def draft_followup_message(
+    owner_phone: str,
+    lead_id: int,
+    tone: str = "friendly",
+) -> str:
+    """Generate follow-up message text for owner review."""
+    params = DraftFollowupMessageInput(
+        owner_phone=owner_phone,
+        lead_id=lead_id,
+        tone=tone,
+    )
+    return _serialize(
+        lead_service.draft_followup_message(
+            params.owner_phone,
+            params.lead_id,
+            params.tone,
+        )
+    )
+
+
+@mcp.tool(
+    name="send_whatsapp_message",
+    description=(
+        "Send a WhatsApp message to a lead via Meta Cloud API. "
+        "Agent loop must obtain owner confirmation before calling this tool."
+    ),
+)
+def send_whatsapp_message(
+    owner_phone: str,
+    lead_id: int,
+    message_text: str,
+) -> str:
+    """Send message to lead and update last_contacted_at."""
+    params = SendWhatsappMessageInput(
+        owner_phone=owner_phone,
+        lead_id=lead_id,
+        message_text=message_text,
+    )
+    return _serialize(
+        lead_service.send_whatsapp_message(
+            params.owner_phone,
+            params.lead_id,
+            params.message_text,
+        )
+    )
 
 
 if __name__ == "__main__":
