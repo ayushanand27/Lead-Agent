@@ -61,7 +61,7 @@ Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent l
 | Agent protocol | MCP (official Python SDK, FastMCP) |
 | LLM | Groq API — `openai/gpt-oss-120b` (OpenAI-compatible tool calling) |
 | Messaging | Meta WhatsApp Cloud API |
-| Database | SQLite (`leads.db`) |
+| Database | Supabase Postgres (production) / SQLite (local tests) |
 | Rate limiting | slowapi (30 req/min on webhook) |
 | Hosting target | Render.com |
 
@@ -133,7 +133,8 @@ Register in Cursor or Claude Desktop, or inspect with `mcp dev app/mcp_server.py
 | `WHATSAPP_PHONE_NUMBER_ID` | Yes | WhatsApp Business phone number ID from Meta dashboard |
 | `WHATSAPP_VERIFY_TOKEN` | Yes | Arbitrary string for `GET /webhook` subscription verification |
 | `WHATSAPP_APP_SECRET` | Yes | App secret for `X-Hub-Signature-256` HMAC validation |
-| `DATABASE_PATH` | No | SQLite file path (default: `leads.db` in project root) |
+| `DATABASE_URL` | Production | Supabase Postgres URI (transaction pooler, port 6543) |
+| `DATABASE_PATH` | Local only | SQLite path when `DATABASE_URL` is unset (default: `leads.db`) |
 
 ---
 
@@ -180,7 +181,7 @@ lead-agent/
 │   ├── agent.py           # Groq agent loop + confirmation flow
 │   ├── mcp_server.py      # MCP server (9 tools)
 │   ├── lead_service.py    # Business logic layer
-│   ├── db.py              # SQLite schema + queries
+│   ├── db.py              # Postgres (Supabase) + SQLite queries
 │   ├── models.py          # Pydantic models + tool schemas
 │   ├── pending_actions.py # In-memory confirmation store
 │   └── whatsapp.py        # Meta Cloud API helpers
@@ -191,7 +192,9 @@ lead-agent/
 │   └── test_webhook.py
 ├── tests/
 │   └── test_owner_isolation.py
-├── requirements.txt
+├── migrations/
+│   └── 001_leads_schema.sql
+├── DEPLOY.md              # Meta + Supabase + Render setup guide
 └── .env.example
 ```
 
@@ -211,13 +214,15 @@ All local test suites passing:
 
 ---
 
-## Deployment (Render)
+## Deployment
+
+**Full setup guide:** see **[DEPLOY.md](DEPLOY.md)** — Meta webhook, Supabase Postgres, Render env vars, and keep-alive.
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-Set all environment variables in the Render dashboard. Point Meta's webhook to `https://<your-app>.onrender.com/webhook`.
+Set `DATABASE_URL` (Supabase) plus all WhatsApp/Groq env vars on Render. Point Meta's webhook to `https://<your-app>.onrender.com/webhook`.
 
 ---
 

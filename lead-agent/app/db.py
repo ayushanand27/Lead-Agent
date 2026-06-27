@@ -1,15 +1,76 @@
+"""Database layer — Postgres (Supabase) in production, SQLite for local tests."""
+
+from __future__ import annotations
+
 import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "leads.db"
+
+_POSTGRES_INIT_SQL = """
+CREATE TABLE IF NOT EXISTS leads (
+    id BIGSERIAL PRIMARY KEY,
+    owner_phone TEXT NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    notes TEXT,
+    last_contacted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_leads_owner_phone ON leads (owner_phone);
+CREATE INDEX IF NOT EXISTS idx_leads_owner_status ON leads (owner_phone, status);
+
+CREATE TABLE IF NOT EXISTS action_log (
+    id BIGSERIAL PRIMARY KEY,
+    owner_phone TEXT NOT NULL,
+    action TEXT NOT NULL,
+    details TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_action_log_owner_phone ON action_log (owner_phone);
+
+ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE action_log ENABLE ROW LEVEL SECURITY;
+"""
+
+_SQLITE_INIT_SQL = """
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_phone TEXT NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    notes TEXT,
+    last_contacted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_leads_owner_phone ON leads(owner_phone);
+CREATE INDEX IF NOT EXISTS idx_leads_owner_status ON leads(owner_phone, status);
+
+CREATE TABLE IF NOT EXISTS action_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_phone TEXT NOT NULL,
+    action TEXT NOT NULL,
+    details TEXT NOT NULL,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_action_log_owner_phone ON action_log(owner_phone);
+"""
+
+
+def _use_postgres() -> bool:
+    return bool(os.getenv("DATABASE_URL"))
 
 
 def get_db_path() -> Path:
@@ -19,64 +80,60 @@ def get_db_path() -> Path:
     return DEFAULT_DB_PATH
 
 
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(get_db_path())
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def _q(query: str) -> str:
+    """Normalize placeholders: Postgres uses %s, SQLite uses ?."""
+    if _use_postgres():
+        return query
+    return query.replace("%s", "?")
+
+
+def _row_to_dict(row: Any) -> dict:
+    if row is None:
+        return {}
+    if isinstance(row, sqlite3.Row):
+        return dict(row)
+    return dict(row)
 
 
 @contextmanager
-def get_connection() -> Iterator[sqlite3.Connection]:
-    conn = _connect()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+def get_connection() -> Iterator[Any]:
+    if _use_postgres():
+        import psycopg
+        from psycopg.rows import dict_row
+
+        conn = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    else:
+        conn = sqlite3.connect(get_db_path())
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 def init_db() -> None:
+    script = _POSTGRES_INIT_SQL if _use_postgres() else _SQLITE_INIT_SQL
     with get_connection() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS leads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_phone TEXT NOT NULL,
-                name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                source TEXT NOT NULL,
-                status TEXT NOT NULL,
-                notes TEXT,
-                last_contacted_at TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_leads_owner_phone
-                ON leads(owner_phone);
-
-            CREATE INDEX IF NOT EXISTS idx_leads_owner_status
-                ON leads(owner_phone, status);
-
-            CREATE TABLE IF NOT EXISTS action_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_phone TEXT NOT NULL,
-                action TEXT NOT NULL,
-                details TEXT NOT NULL,
-                timestamp TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_action_log_owner_phone
-                ON action_log(owner_phone);
-            """
-        )
-
-
-def _row_to_dict(row: sqlite3.Row) -> dict:
-    return dict(row)
+        if _use_postgres():
+            for statement in script.split(";"):
+                stmt = statement.strip()
+                if stmt:
+                    conn.execute(stmt)
+        else:
+            conn.executescript(script)
 
 
 def seed_test_leads(owner_phone: str) -> int:
@@ -126,16 +183,19 @@ def seed_test_leads(owner_phone: str) -> int:
     ]
 
     inserted = 0
+    insert_sql = _q(
+        """
+        INSERT INTO leads (
+            owner_phone, name, phone, source, status, notes,
+            last_contacted_at, created_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+    )
     with get_connection() as conn:
         for lead in samples:
             cursor = conn.execute(
-                """
-                INSERT INTO leads (
-                    owner_phone, name, phone, source, status, notes,
-                    last_contacted_at, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                insert_sql,
                 (
                     owner_phone,
                     lead["name"],
@@ -160,35 +220,37 @@ def fetch_leads_for_owner(
         SELECT id, owner_phone, name, phone, source, status, notes,
                last_contacted_at, created_at
         FROM leads
-        WHERE owner_phone = ?
+        WHERE owner_phone = %s
     """
-    params: list = [owner_phone]
+    params: list[Any] = [owner_phone]
 
     if status_filter is not None:
-        query += " AND status = ?"
+        query += " AND status = %s"
         params.append(status_filter)
 
     query += " ORDER BY created_at DESC"
 
     with get_connection() as conn:
-        rows = conn.execute(query, params).fetchall()
+        rows = conn.execute(_q(query), params).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
 def fetch_stale_leads(owner_phone: str, days_since_contact: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days_since_contact)).isoformat()
-    query = """
+    query = _q(
+        """
         SELECT id, owner_phone, name, phone, source, status, notes,
                last_contacted_at, created_at
         FROM leads
-        WHERE owner_phone = ?
+        WHERE owner_phone = %s
           AND status NOT IN ('converted', 'lost')
           AND (
                 last_contacted_at IS NULL
-                OR last_contacted_at <= ?
+                OR last_contacted_at <= %s
               )
         ORDER BY COALESCE(last_contacted_at, created_at) ASC
-    """
+        """
+    )
     with get_connection() as conn:
         rows = conn.execute(query, (owner_phone, cutoff)).fetchall()
     return [_row_to_dict(row) for row in rows]
@@ -196,19 +258,26 @@ def fetch_stale_leads(owner_phone: str, days_since_contact: int) -> list[dict]:
 
 def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
     pattern = f"%{query_text.strip()}%"
-    query = """
+    if _use_postgres():
+        notes_expr = "COALESCE(notes, '')"
+    else:
+        notes_expr = "IFNULL(notes, '')"
+
+    query = _q(
+        f"""
         SELECT id, owner_phone, name, phone, source, status, notes,
                last_contacted_at, created_at
         FROM leads
-        WHERE owner_phone = ?
+        WHERE owner_phone = %s
           AND (
-                name LIKE ?
-                OR phone LIKE ?
-                OR source LIKE ?
-                OR IFNULL(notes, '') LIKE ?
+                name LIKE %s
+                OR phone LIKE %s
+                OR source LIKE %s
+                OR {notes_expr} LIKE %s
               )
         ORDER BY created_at DESC
-    """
+        """
+    )
     params = (owner_phone, pattern, pattern, pattern, pattern)
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
@@ -216,12 +285,14 @@ def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
 
 
 def fetch_lead_by_id(owner_phone: str, lead_id: int) -> Optional[dict]:
-    query = """
+    query = _q(
+        """
         SELECT id, owner_phone, name, phone, source, status, notes,
                last_contacted_at, created_at
         FROM leads
-        WHERE id = ? AND owner_phone = ?
-    """
+        WHERE id = %s AND owner_phone = %s
+        """
+    )
     with get_connection() as conn:
         row = conn.execute(query, (lead_id, owner_phone)).fetchone()
     return _row_to_dict(row) if row else None
@@ -237,14 +308,32 @@ def insert_lead(
 ) -> int:
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
+        if _use_postgres():
+            row = conn.execute(
+                _q(
+                    """
+                    INSERT INTO leads (
+                        owner_phone, name, phone, source, status, notes,
+                        last_contacted_at, created_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, NULL, %s)
+                    RETURNING id
+                    """
+                ),
+                (owner_phone, name, phone, source, status, notes, now),
+            ).fetchone()
+            return int(row["id"])
+
         cursor = conn.execute(
-            """
-            INSERT INTO leads (
-                owner_phone, name, phone, source, status, notes,
-                last_contacted_at, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
-            """,
+            _q(
+                """
+                INSERT INTO leads (
+                    owner_phone, name, phone, source, status, notes,
+                    last_contacted_at, created_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, NULL, %s)
+                """
+            ),
             (owner_phone, name, phone, source, status, notes, now),
         )
         return int(cursor.lastrowid)
@@ -253,11 +342,13 @@ def insert_lead(
 def update_lead_status(owner_phone: str, lead_id: int, new_status: str) -> bool:
     with get_connection() as conn:
         cursor = conn.execute(
-            """
-            UPDATE leads
-            SET status = ?
-            WHERE id = ? AND owner_phone = ?
-            """,
+            _q(
+                """
+                UPDATE leads
+                SET status = %s
+                WHERE id = %s AND owner_phone = %s
+                """
+            ),
             (new_status, lead_id, owner_phone),
         )
         return cursor.rowcount > 0
@@ -269,18 +360,17 @@ def append_lead_note(owner_phone: str, lead_id: int, note_line: str) -> bool:
         return False
 
     existing = lead.get("notes") or ""
-    if existing:
-        updated_notes = f"{existing}\n{note_line}"
-    else:
-        updated_notes = note_line
+    updated_notes = f"{existing}\n{note_line}" if existing else note_line
 
     with get_connection() as conn:
         cursor = conn.execute(
-            """
-            UPDATE leads
-            SET notes = ?
-            WHERE id = ? AND owner_phone = ?
-            """,
+            _q(
+                """
+                UPDATE leads
+                SET notes = %s
+                WHERE id = %s AND owner_phone = %s
+                """
+            ),
             (updated_notes, lead_id, owner_phone),
         )
         return cursor.rowcount > 0
@@ -290,11 +380,13 @@ def update_last_contacted_at(owner_phone: str, lead_id: int) -> bool:
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
         cursor = conn.execute(
-            """
-            UPDATE leads
-            SET last_contacted_at = ?
-            WHERE id = ? AND owner_phone = ?
-            """,
+            _q(
+                """
+                UPDATE leads
+                SET last_contacted_at = %s
+                WHERE id = %s AND owner_phone = %s
+                """
+            ),
             (now, lead_id, owner_phone),
         )
         return cursor.rowcount > 0
@@ -302,23 +394,40 @@ def update_last_contacted_at(owner_phone: str, lead_id: int) -> bool:
 
 def log_action(owner_phone: str, action: str, details: str) -> int:
     with get_connection() as conn:
+        if _use_postgres():
+            row = conn.execute(
+                _q(
+                    """
+                    INSERT INTO action_log (owner_phone, action, details)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                    """
+                ),
+                (owner_phone, action, details),
+            ).fetchone()
+            return int(row["id"])
+
         cursor = conn.execute(
-            """
-            INSERT INTO action_log (owner_phone, action, details)
-            VALUES (?, ?, ?)
-            """,
+            _q(
+                """
+                INSERT INTO action_log (owner_phone, action, details)
+                VALUES (%s, %s, %s)
+                """
+            ),
             (owner_phone, action, details),
         )
         return int(cursor.lastrowid)
 
 
 def fetch_action_log(owner_phone: str) -> list[dict]:
-    query = """
+    query = _q(
+        """
         SELECT id, owner_phone, action, details, timestamp
         FROM action_log
-        WHERE owner_phone = ?
+        WHERE owner_phone = %s
         ORDER BY timestamp ASC
-    """
+        """
+    )
     with get_connection() as conn:
         rows = conn.execute(query, (owner_phone,)).fetchall()
     return [_row_to_dict(row) for row in rows]
