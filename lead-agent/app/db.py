@@ -73,6 +73,19 @@ def _use_postgres() -> bool:
     return bool(os.getenv("DATABASE_URL"))
 
 
+def _connect_postgres():
+    """Connect to Supabase/Postgres. Use DATABASE_PASSWORD for special chars on Render."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    url = os.environ["DATABASE_URL"].strip()
+    password = os.getenv("DATABASE_PASSWORD", "").strip()
+    kwargs: dict = {"row_factory": dict_row}
+    if password:
+        kwargs["password"] = password
+    return psycopg.connect(url, **kwargs)
+
+
 def get_db_path() -> Path:
     configured = os.getenv("DATABASE_PATH")
     if configured:
@@ -101,7 +114,7 @@ def get_connection() -> Iterator[Any]:
         import psycopg
         from psycopg.rows import dict_row
 
-        conn = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+        conn = _connect_postgres()
         try:
             yield conn
             conn.commit()
