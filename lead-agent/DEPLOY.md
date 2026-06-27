@@ -82,7 +82,8 @@ In [Render Dashboard](https://dashboard.render.com) → your **lead-agent** serv
 
 | Variable | Value |
 |----------|--------|
-| `DATABASE_URL` | Supabase connection URI (transaction pooler, port 6543) |
+| `DATABASE_URL` | Supabase Postgres URI (transaction pooler, port 6543) — password optional if using `DATABASE_PASSWORD` |
+| `DATABASE_PASSWORD` | **Recommended on Render** — plain database password (handles `@`, `#`, spaces) |
 | `GROQ_API_KEY` | Your Groq API key |
 | `WHATSAPP_TOKEN` | Meta **System User** permanent token |
 | `WHATSAPP_PHONE_NUMBER_ID` | e.g. `1144225728778614` |
@@ -90,6 +91,15 @@ In [Render Dashboard](https://dashboard.render.com) → your **lead-agent** serv
 | `WHATSAPP_APP_SECRET` | From Meta App → Settings → Basic |
 
 **Remove** `DATABASE_PATH` from Render (or leave unset) — production uses Postgres only.
+
+**Recommended — two env vars (passwords with `@` or special chars):**
+
+```bash
+DATABASE_URL=postgresql://postgres.YOUR_PROJECT_REF@aws-1-REGION.pooler.supabase.com:6543/postgres?sslmode=require
+DATABASE_PASSWORD=your-plain-database-password
+```
+
+Do **not** put the password inside `DATABASE_URL` when using `DATABASE_PASSWORD`.
 
 ### 2.2 Deploy settings
 
