@@ -15,12 +15,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Set test env before importing app
-os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test_verify_token")
-os.environ.setdefault("WHATSAPP_APP_SECRET", "test_app_secret")
-os.environ.setdefault("WHATSAPP_TOKEN", "test_whatsapp_token")
-os.environ.setdefault("WHATSAPP_PHONE_NUMBER_ID", "123456789")
-os.environ.setdefault("DATABASE_PATH", str(ROOT / "test_webhook.db"))
+from scripts.test_support import configure_test_environment  # noqa: E402
+
+configure_test_environment(ROOT)
 
 from fastapi.testclient import TestClient  # noqa: E402
 

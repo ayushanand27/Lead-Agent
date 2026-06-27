@@ -13,6 +13,9 @@ defaults:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: test-groq-key
+      DATABASE_PATH: /tmp/lead-agent-ci.db
     steps:
       - uses: actions/checkout@v4
 

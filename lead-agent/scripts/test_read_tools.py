@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.test_support import configure_test_environment  # noqa: E402
+
+configure_test_environment(ROOT)
+
 from app import db, lead_service  # noqa: E402
 from app.mcp_server import (  # noqa: E402
     get_lead_details,
