@@ -149,6 +149,16 @@ def init_db() -> None:
             conn.executescript(script)
 
 
+def check_connection() -> bool:
+    """Return True if the database is reachable (used by /health/ready)."""
+    try:
+        with get_connection() as conn:
+            conn.execute(_q("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
 def seed_test_leads(owner_phone: str) -> int:
     """Insert sample leads for local testing. Returns number of rows inserted."""
     now = datetime.now(timezone.utc)

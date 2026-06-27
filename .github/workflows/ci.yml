@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    working-directory: lead-agent
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: lead-agent/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Read tools
+        run: python scripts/test_read_tools.py
+
+      - name: Write tools
+        run: python scripts/test_write_tools.py
+
+      - name: Webhook
+        run: python scripts/test_webhook.py
+
+      - name: Owner isolation (pytest)
+        run: pytest tests/ -v
+
+      - name: Agent loop (optional — set GROQ_API_KEY repo secret to enable)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -n "$GROQ_API_KEY" ]; then
+            python scripts/test_agent.py
+          else
+            echo "Skipping agent tests — GROQ_API_KEY not configured"
+          fi

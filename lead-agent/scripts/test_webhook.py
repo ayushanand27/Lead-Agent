@@ -172,7 +172,15 @@ def main() -> None:
     data = response.json()
     assert data["status"] == "ok"
     assert isinstance(data["timestamp"], int)
+    assert data["database"] == "connected"
     print("PASS: health check ok")
+
+    # 6. GET /health/ready
+    print("\n--- Test 6: GET /health/ready ---")
+    response = client.get("/health/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    print("PASS: readiness check ok")
 
     print("\nAll webhook tests passed.")
 

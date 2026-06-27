@@ -11,22 +11,28 @@ import time
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import PlainTextResponse
+from fastapi import BackgroundTasks, FastAPI, Request, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app import db
 from app.agent import handle_message
+from app.logging_config import configure_logging
 from app.whatsapp import send_whatsapp_reply, verify_webhook
 
 load_dotenv()
+configure_logging()
 
 logger = logging.getLogger(__name__)
 
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="WhatsApp Lead Management Agent")
+app = FastAPI(
+    title="LeadAgent",
+    description="WhatsApp Lead Management Agent (MCP + Groq)",
+    version="1.0.0",
+)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -34,7 +40,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 @app.on_event("startup")
 def on_startup() -> None:
     db.init_db()
-    logger.info("Database initialized")
+    if db.check_connection():
+        backend = "postgres" if os.getenv("DATABASE_URL") else "sqlite"
+        logger.info("Database initialized (%s)", backend)
+    else:
+        logger.error("Database connection check failed on startup")
 
 
 def _verify_meta_signature(raw_body: bytes, signature_header: str | None) -> bool:
@@ -77,9 +87,37 @@ def _extract_incoming_text_message(payload: dict[str, Any]) -> tuple[str, str] |
     return None
 
 
+async def _process_incoming_message(owner_phone: str, message_text: str) -> None:
+    """Handle agent loop + outbound WhatsApp reply (runs after webhook ack)."""
+    try:
+        logger.info("Processing message from owner %s", owner_phone)
+        reply = await handle_message(owner_phone, message_text)
+        sent = await send_whatsapp_reply(owner_phone, reply)
+        if not sent:
+            logger.error("Failed to send WhatsApp reply to owner %s", owner_phone)
+    except Exception:
+        logger.exception("Error handling webhook message from %s", owner_phone)
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "timestamp": int(time.time())}
+    """Liveness probe — always 200 when the process is up (UptimeRobot / Render)."""
+    return {
+        "status": "ok",
+        "timestamp": int(time.time()),
+        "database": "connected" if db.check_connection() else "unavailable",
+    }
+
+
+@app.get("/health/ready")
+def health_ready() -> Response:
+    """Readiness probe — 503 when the database is unreachable."""
+    if not db.check_connection():
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "database": "unavailable"},
+        )
+    return JSONResponse(content={"status": "ready", "database": "connected"})
 
 
 @app.get("/webhook")
@@ -97,7 +135,7 @@ async def webhook_verify(request: Request) -> Response:
 
 @app.post("/webhook")
 @limiter.limit("30/minute")
-async def webhook_receive(request: Request) -> Response:
+async def webhook_receive(request: Request, background_tasks: BackgroundTasks) -> Response:
     raw_body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
 
@@ -116,13 +154,6 @@ async def webhook_receive(request: Request) -> Response:
         return Response(status_code=200)
 
     owner_phone, message_text = extracted
-
-    try:
-        reply = await handle_message(owner_phone, message_text)
-        sent = await send_whatsapp_reply(owner_phone, reply)
-        if not sent:
-            logger.error("Failed to send WhatsApp reply to owner %s", owner_phone)
-    except Exception:
-        logger.exception("Error handling webhook message from %s", owner_phone)
-
+    logger.info("Webhook accepted message from %s", owner_phone)
+    background_tasks.add_task(_process_incoming_message, owner_phone, message_text)
     return Response(status_code=200)

@@ -1,5 +1,7 @@
 # LeadAgent — WhatsApp Lead Management Agent (MCP-powered)
 
+[![CI](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml)
+
 **AI agent for Indian SMBs to manage sales leads via WhatsApp in plain English/Hindi.**
 
 LeadAgent lets a small business owner text a WhatsApp bot like they'd text an employee — *"which leads haven't I called in 2 days?"*, *"mark Ramesh as converted"*, *"send a follow-up to Priya"* — and get safe, auditable results. No app, no dashboard, no login.
@@ -70,6 +72,8 @@ Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent l
 | Messaging | Meta WhatsApp Cloud API |
 | Database | **Supabase Postgres** (production) / SQLite (local tests) |
 | Rate limiting | slowapi (30 req/min on webhook) |
+| CI/CD | GitHub Actions (`.github/workflows/ci.yml`) |
+| IaC | `render.yaml` at repo root |
 | Hosting | Render.com (free tier) |
 
 ---
@@ -188,10 +192,80 @@ DATABASE_PASSWORD=your-database-password
 
 ```bash
 curl https://lead-agent-to63.onrender.com/health
-# {"status":"ok","timestamp":...}
+# {"status":"ok","timestamp":...,"database":"connected"}
+
+curl https://lead-agent-to63.onrender.com/health/ready
+# {"status":"ready","database":"connected"}
 ```
 
 WhatsApp test: message the Meta test number → `Add lead Ramesh phone 9876543210 from Surat` → check row in Supabase **Table Editor** → `leads`.
+
+### Keep-alive (Render free tier)
+
+Use [UptimeRobot](https://uptimerobot.com) to ping every **5 minutes**:
+
+```
+https://lead-agent-to63.onrender.com/health
+```
+
+---
+
+## HTTP API
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | **Liveness** — always 200 when process is up; includes `database` status |
+| `/health/ready` | GET | **Readiness** — 503 if database unreachable |
+| `/webhook` | GET | Meta webhook verification challenge |
+| `/webhook` | POST | Inbound WhatsApp messages (HMAC-validated; acks immediately, processes in background) |
+
+Set `LOG_LEVEL=DEBUG` for verbose server logs.
+
+---
+
+## CI/CD
+
+Tests run automatically on every push to `main` via GitHub Actions:
+
+- `test_read_tools.py`, `test_write_tools.py`, `test_webhook.py`
+- `pytest tests/` (owner isolation)
+- `test_agent.py` (optional — requires `GROQ_API_KEY` repo secret)
+
+Run locally:
+
+```bash
+cd lead-agent
+python scripts/test_read_tools.py
+python scripts/test_write_tools.py
+python scripts/test_webhook.py
+pytest tests/ -v
+```
+
+---
+
+## Industry standards implemented
+
+| Practice | Implementation |
+|----------|----------------|
+| Stateless app + managed DB | Render + Supabase Postgres |
+| Secrets via env vars | Never committed; `DATABASE_PASSWORD` for special chars |
+| Webhook HMAC validation | `X-Hub-Signature-256` |
+| Fast webhook ack | `BackgroundTasks` — 200 to Meta before agent loop |
+| Health / readiness probes | `/health` + `/health/ready` |
+| Infrastructure as code | `render.yaml` |
+| Automated testing | GitHub Actions CI |
+| Multi-tenant isolation | `owner_phone` on every query |
+| Human-in-the-loop | Confirmation before send / terminal status |
+| Audit logging | `action_log` table |
+| RLS on database | Supabase `leads` + `action_log` |
+| Parameterized SQL | No string-interpolated queries |
+| Pinned Python runtime | `runtime.txt` → 3.11.11 |
+
+**Known v1 limitations (acceptable for portfolio / test sandbox):**
+- Meta **test number** only (not production WABA)
+- `PendingActionStore` is in-memory (cleared on restart)
+- No Redis / job queue (single Render instance)
+- No external error monitoring (Sentry, etc.)
 
 ---
 
@@ -236,6 +310,7 @@ pytest tests/test_owner_isolation.py -v
 lead-agent/
 ├── app/
 │   ├── main.py            # FastAPI webhook + health routes
+│   ├── logging_config.py  # LOG_LEVEL configuration
 │   ├── agent.py           # Groq agent loop + confirmation flow
 │   ├── mcp_server.py      # MCP server (9 tools)
 │   ├── lead_service.py    # Business logic layer
@@ -257,6 +332,11 @@ lead-agent/
 ├── runtime.txt            # Python 3.11 for Render
 ├── requirements.txt
 └── .env.example
+
+../                          # repo root (mcp-build)
+├── README.md                # Landing page — links here for full docs
+├── render.yaml              # Render IaC
+└── .github/workflows/ci.yml
 ```
 
 ---
