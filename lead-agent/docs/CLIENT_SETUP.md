@@ -248,7 +248,7 @@ Demo uses Meta's **test number**. A paying client needs a **real WABA**:
 | 3 | Complete **Business Verification** (2–5 business days) |
 | 4 | App Review → `whatsapp_business_messaging` permission |
 | 5 | Update Render: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TOKEN` (System User) |
-| 6 | Upgrade Render to **Starter** (~$7/mo) — no cold starts |
+| 6 | Upgrade Render to **Starter** (~$7/mo) — **client pays** in setup fee; not required for your demo |
 | 7 | Re-subscribe webhook on new WABA if number ID changed |
 
 Until this is done, outbound messages only reach numbers on Meta's test recipient list (max 5).

@@ -1,6 +1,6 @@
 # LeadAgent — WhatsApp Lead Management Agent
 
-[![CI](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml)
+[![CI](https://github.com/ayushanand27/Lead-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/Lead-Agent/actions/workflows/ci.yml)
 
 **Most Indian SMBs lose WhatsApp leads because follow-up is manual — notes in chat, Excel at midnight, no one knows who's stale.**
 
@@ -12,11 +12,11 @@ LeadAgent fixes that. Your sales team texts a WhatsApp bot in **plain Hindi or E
 
 ## Screenshots
 
-| Admin | WhatsApp | Live |
+| Dashboard | Leads + Edit | WhatsApp |
 |:---:|:---:|:---:|
-| ![Admin](../docs/screenshots/admin-dashboard.png) | ![WhatsApp](../docs/screenshots/whatsapp-flow.png) | ![Health](../docs/screenshots/health-check.png) |
+| ![Dashboard](../docs/screenshots/admin-dashboard.png) | ![Leads](../docs/screenshots/admin-leads.png) | ![WhatsApp](../docs/screenshots/whatsapp-flow.png) |
 
-Add images to [`docs/screenshots/`](../docs/screenshots/README.md) before posting on LinkedIn.
+**Live:** [health check](https://lead-agent-to63.onrender.com/health) · [admin](https://lead-agent-to63.onrender.com/admin)
 
 ---
 
@@ -120,8 +120,8 @@ LeadAgent is an MCP-powered agent: a **real MCP server** with typed tools, a **G
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/ayushanand27/mcp-build.git
-cd mcp-build/lead-agent
+git clone https://github.com/ayushanand27/Lead-Agent.git
+cd Lead-Agent/lead-agent
 
 python -m venv .venv
 
@@ -221,7 +221,7 @@ DATABASE_PASSWORD=your-database-password
 **Client handover:** **[docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md)** — deploy, Sheets, webhook, cron, production WABA checklist.  
 **Command guide:** **[docs/CLIENT_GUIDE.md](docs/CLIENT_GUIDE.md)** · **IndiaMART/Zapier:** **[docs/ZAPIER_INDIA_MART.md](docs/ZAPIER_INDIA_MART.md)**
 
-> Upgrade Render to **Starter** (~$7/mo) before client-facing demos to avoid cold-start delays.
+**Demo hosting:** free Render + UptimeRobot ping on `/health` is enough for portfolio. Charge clients for Render Starter when they pay you.
 
 ### Summary
 
@@ -257,9 +257,9 @@ curl https://lead-agent-to63.onrender.com/api/leads/health
 
 WhatsApp test: message the Meta test number → `Add lead Ramesh phone 9876543210 from Surat` → check row in Supabase **Table Editor** → `leads`.
 
-### Keep-alive (optional on Starter plan)
+### Keep-alive (free demo)
 
-If still on Render's sleep-prone plan, ping every **5 minutes**:
+Ping every **5 minutes** so WhatsApp replies stay fast:
 
 ```
 https://lead-agent-to63.onrender.com/health
@@ -427,7 +427,7 @@ lead-agent/
 |---------|--------------|-----|
 | Render deploy fails on startup | Bad `DATABASE_URL` | Use `DATABASE_URL` (no password) + `DATABASE_PASSWORD` separately |
 | `password authentication failed` | `@` in password broke URL | Use separate `DATABASE_PASSWORD` or URL-encode password |
-| No WhatsApp reply | Service waking / webhook | Ping `/health`, wait 30s; use Render Starter for clients |
+| No WhatsApp reply | Service waking / webhook | Ping `/health`, wait 30s; add UptimeRobot 5-min ping |
 | No WhatsApp reply | Webhook not subscribed | Meta → WhatsApp → Configuration → subscribe `messages` |
 | Leads gone after redeploy | SQLite on Render (old setup) | Set `DATABASE_URL` to Supabase |
 | OAuth error 190 | Expired WhatsApp token | Regenerate System User token on Meta |

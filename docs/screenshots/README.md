@@ -1,11 +1,9 @@
-# Screenshots for README / LinkedIn
+# Screenshots
 
-Add these three images before your first public post. Capture on phone or laptop, crop cleanly (no notifications), optional polish via [Screely](https://screely.com).
+| File | Used for |
+|------|----------|
+| `admin-dashboard.png` | Dashboard overview (stats + activity) |
+| `admin-leads.png` | Leads table with Edit + Sheets sync |
+| `whatsapp-flow.png` | WhatsApp bot conversation |
 
-| File | What to capture |
-|------|-----------------|
-| `admin-dashboard.png` | `/admin/leads` — dark table with a few leads, Edit button visible |
-| `whatsapp-flow.png` | WhatsApp chat: you send a command → bot replies with lead list or confirmation |
-| `health-check.png` | Browser on `/health` showing `{"status":"ok","database":"connected","cron_configured":true}` |
-
-Save files in this folder, then they render automatically in the root README.
+**Health check:** use live link instead of a screenshot — [lead-agent-to63.onrender.com/health](https://lead-agent-to63.onrender.com/health)

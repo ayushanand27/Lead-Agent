@@ -11,22 +11,19 @@ Indian real estate teams, coaching centers, and SMBs get most leads on WhatsApp.
 - Subah 9 baje: stale leads ka summary sab owners ko
 - Sheet backup — same lead update hoti hai, duplicate row nahi
 
-**Live demo:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin) · **Code:** [github.com/ayushanand27/mcp-build](https://github.com/ayushanand27/mcp-build)
+**Live demo:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin) · **Code:** [github.com/ayushanand27/Lead-Agent](https://github.com/ayushanand27/Lead-Agent)
 
-[![CI](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml)
+[![CI](https://github.com/ayushanand27/Lead-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/Lead-Agent/actions/workflows/ci.yml)
 
 ---
 
 ## See it working
 
-| Admin dashboard | WhatsApp flow | Live deployment |
+| Dashboard | Leads + Edit | WhatsApp bot |
 |:---:|:---:|:---:|
-| ![Admin dashboard](docs/screenshots/admin-dashboard.png) | ![WhatsApp conversation](docs/screenshots/whatsapp-flow.png) | ![Health check](docs/screenshots/health-check.png) |
-| Lead table, edit, Sheets sync | Plain-language commands | Proves it's not "coming soon" |
+| ![Dashboard](docs/screenshots/admin-dashboard.png) | ![Leads table](docs/screenshots/admin-leads.png) | ![WhatsApp flow](docs/screenshots/whatsapp-flow.png) |
 
-*Add PNGs to [`docs/screenshots/`](docs/screenshots/README.md) before LinkedIn/X — paths are wired.*
-
----
+**Live health check:** [lead-agent-to63.onrender.com/health](https://lead-agent-to63.onrender.com/health) — should show `"database":"connected"` and `"cron_configured":true`
 
 ## Example: real estate team (Surat)
 
@@ -65,8 +62,8 @@ WhatsApp / Webhook  →  Render (FastAPI)  →  Groq agent  →  MCP tools (×10
 ## Quick start
 
 ```bash
-git clone https://github.com/ayushanand27/mcp-build.git
-cd mcp-build/lead-agent
+git clone https://github.com/ayushanand27/Lead-Agent.git
+cd Lead-Agent/lead-agent
 python -m venv .venv && .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
 cp .env.example .env
@@ -88,7 +85,7 @@ uvicorn app.main:app --reload --port 8000
 | Cron | [cron-job.org](https://cron-job.org) (daily summary) |
 | CI | GitHub Actions |
 
-> **Before client demos:** upgrade Render to **Starter** (~$7/mo) to remove cold-start delays on WhatsApp replies.
+**Demo hosting:** Render free tier is fine for portfolio + LinkedIn. Ping `/health` every 5 min ([UptimeRobot](https://uptimerobot.com)) or rely on daily cron to keep the service warm. **Paid clients** cover Render Starter (~$7/mo) in their setup fee.
 
 ---
 ## Status (live demo — June 2026)
@@ -108,8 +105,6 @@ uvicorn app.main:app --reload --port 8000
 | Deployed on Render | ✅ |
 | Meta test sandbox (up to 5 recipients) | ✅ |
 | Automated test suite + CI | ✅ |
-
-> **Repo rename (optional):** GitHub → Settings → rename `mcp-build` → `leadagent` so your LinkedIn link matches the product name.
 
 ---
 ## License
