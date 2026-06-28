@@ -285,4 +285,5 @@ curl https://lead-agent-to63.onrender.com/api/leads/health
 
 ---
 
-**Live demo:** https://lead-agent-to63.onrender.com/admin
+**Live demo (admin):** https://lead-agent-to63.onrender.com/admin/login  
+**API health:** https://lead-agent-to63.onrender.com/health

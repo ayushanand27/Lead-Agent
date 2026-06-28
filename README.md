@@ -11,7 +11,7 @@ Indian real estate teams, coaching centers, and SMBs get most leads on WhatsApp.
 - Subah 9 baje: stale leads ka summary sab owners ko
 - Sheet backup — same lead update hoti hai, duplicate row nahi
 
-**Live demo:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin) · **Code:** [github.com/ayushanand27/Lead-Agent](https://github.com/ayushanand27/Lead-Agent)
+**Live demo:** [Admin portal](https://lead-agent-to63.onrender.com/admin/login) · **API health:** [/health](https://lead-agent-to63.onrender.com/health) · **Code:** [github.com/ayushanand27/Lead-Agent](https://github.com/ayushanand27/Lead-Agent)
 
 [![CI](https://github.com/ayushanand27/Lead-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/Lead-Agent/actions/workflows/ci.yml)
 
@@ -23,7 +23,7 @@ Indian real estate teams, coaching centers, and SMBs get most leads on WhatsApp.
 |:---:|:---:|:---:|:---:|
 | ![Dashboard](docs/screenshots/admin-dashboard.png) | ![Leads table](docs/screenshots/admin-leads.png) | ![WhatsApp flow](docs/screenshots/whatsapp-flow.png) | [![Health check](docs/screenshots/health-check.png)](https://lead-agent-to63.onrender.com/health) |
 
-**Health endpoint:** [lead-agent-to63.onrender.com/health](https://lead-agent-to63.onrender.com/health) — `database: connected`, `cron_configured: true`
+**Health endpoint (devs / uptime):** [lead-agent-to63.onrender.com/health](https://lead-agent-to63.onrender.com/health) — JSON: `database: connected`, `cron_configured: true`
 
 ---
 

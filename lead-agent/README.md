@@ -6,7 +6,7 @@
 
 LeadAgent fixes that. Your sales team texts a WhatsApp bot in **plain Hindi or English** like they'd text an employee. It lists leads, flags who you haven't called, drafts follow-ups, and asks **YES** before anything goes to a customer. New leads from your website or IndiaMART ping the team instantly. Every morning: a summary of who needs attention. Google Sheets stays in sync. Two partners can share the same lead pool.
 
-**Live:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin)
+**Live demo:** [Admin portal](https://lead-agent-to63.onrender.com/admin/login) · **API health:** [/health](https://lead-agent-to63.onrender.com/health)
 
 ---
 
@@ -16,7 +16,7 @@ LeadAgent fixes that. Your sales team texts a WhatsApp bot in **plain Hindi or E
 |:---:|:---:|:---:|:---:|
 | ![Dashboard](../docs/screenshots/admin-dashboard.png) | ![Leads](../docs/screenshots/admin-leads.png) | ![WhatsApp](../docs/screenshots/whatsapp-flow.png) | [![Health](../docs/screenshots/health-check.png)](https://lead-agent-to63.onrender.com/health) |
 
-**Links:** [health](https://lead-agent-to63.onrender.com/health) · [admin](https://lead-agent-to63.onrender.com/admin)
+**Links:** [admin login](https://lead-agent-to63.onrender.com/admin/login) · [health JSON](https://lead-agent-to63.onrender.com/health)
 
 ---
 

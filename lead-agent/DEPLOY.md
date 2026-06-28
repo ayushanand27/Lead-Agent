@@ -231,7 +231,7 @@ After deploy, set these on **Render → Environment**:
 | `BUSINESS_OWNER_PHONES` | `917073245149,917004455149` (partners share leads) |
 | `CRON_SECRET` | e.g. `LeadAgentCron2026Secret` |
 
-Open: `https://lead-agent-to63.onrender.com/admin`
+Open: `https://lead-agent-to63.onrender.com/admin/login`
 
 Login with **owner phone** + **dashboard password**. Features: lead table, **Edit** (status/notes/tags), **Sync all to Google Sheets**, CSV export, activity log.
 
