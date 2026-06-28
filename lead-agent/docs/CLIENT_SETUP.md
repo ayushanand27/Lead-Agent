@@ -99,6 +99,8 @@ function doPost(e) {
 
 Every lead create/update from WhatsApp or webhook syncs to the sheet automatically.
 
+**Troubleshooting:** If WhatsApp works but the sheet stays empty, redeploy after the latest app update (fixes Postgres datetime + Google redirect). Check Render **Logs** for `Google Sheets sync ok` or error lines.
+
 ---
 
 ## 4. Website / form lead capture
