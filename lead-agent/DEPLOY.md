@@ -205,7 +205,31 @@ uvicorn app.main:app --reload --port 8000
 
 ---
 
-## 5. Going to real production (later)
+## 5. Admin dashboard (free tier)
+
+After deploy, set these on **Render → Environment**:
+
+| Variable | Example |
+|----------|---------|
+| `ADMIN_DASHBOARD_PASSWORD` | Strong password you share with the client |
+| `ADMIN_SESSION_SECRET` | Random 32+ char string |
+| `BUSINESS_NAME` | `Sharma Realty` |
+| `BUSINESS_OWNER_PHONES` | `917073245149` (your WhatsApp, digits only) |
+
+Open: `https://lead-agent-to63.onrender.com/admin`
+
+Login with **owner phone** + **dashboard password**. UI is dark zinc (industry-standard admin look) — no paid UI library.
+
+**Daily summary (optional, free):** set `CRON_SECRET`, then on [cron-job.org](https://cron-job.org) create a daily job:
+
+```
+POST https://lead-agent-to63.onrender.com/internal/cron/daily-summary
+Header: X-Cron-Secret: <your CRON_SECRET>
+```
+
+---
+
+## 6. Going to real production (later)
 
 Test number `+1 555…` is for development only. For real Indian SMB customers:
 

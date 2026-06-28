@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+{% block title %}Leads — {{ business_name }}{% endblock %}
+{% block page_title %}Leads{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <form method="get" action="/admin/leads" style="display:flex;gap:0.5rem;flex-wrap:wrap">
+    <input type="search" name="q" value="{{ query or '' }}" placeholder="Search name, phone, source…" />
+    <select name="status">
+      <option value="">All statuses</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn">Filter</button>
+  </form>
+  <a class="btn btn-primary" href="/admin/leads/export{% if query %}?q={{ query }}{% endif %}">Export CSV</a>
+</div>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Name</th><th>Phone</th><th>Source</th><th>Status</th><th>Last contact</th><th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lead in leads %}
+      <tr>
+        <td class="muted">{{ lead.id }}</td>
+        <td>{{ lead.name }}</td>
+        <td>{{ lead.phone }}</td>
+        <td>{{ lead.source }}</td>
+        <td><span class="badge {{ lead.status }}">{{ lead.status }}</span></td>
+        <td class="muted">{{ lead.last_contacted_at or '—' }}</td>
+        <td class="muted">{{ lead.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">No leads found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted" style="margin-top:1rem">{{ leads|length }} lead(s) shown</p>
+{% endblock %}

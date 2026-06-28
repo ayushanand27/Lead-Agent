@@ -29,3 +29,7 @@ def configure_test_environment(root: Path | None = None) -> None:
     os.environ["WHATSAPP_APP_SECRET"] = "test_app_secret"
     os.environ["WHATSAPP_TOKEN"] = "test_whatsapp_token"
     os.environ["WHATSAPP_PHONE_NUMBER_ID"] = "123456789"
+    os.environ["ADMIN_SESSION_SECRET"] = "test-session-secret"
+    os.environ["ADMIN_DASHBOARD_PASSWORD"] = "test-admin-password"
+    os.environ["BUSINESS_OWNER_PHONES"] = "919111111111"
+    os.environ["BUSINESS_NAME"] = "LeadAgent Test"

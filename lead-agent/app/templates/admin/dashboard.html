@@ -1,0 +1,45 @@
+{% extends "admin/base.html" %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+<p class="muted" style="margin-bottom:1.5rem">Overview for your WhatsApp lead pipeline.</p>
+<div class="stats">
+  <div class="card">
+    <div class="card-label">Total leads</div>
+    <div class="card-value">{{ stats.total }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Stale ({{ stale_days }}+ days)</div>
+    <div class="card-value">{{ stale_count }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Hot / Warm</div>
+    <div class="card-value">{{ (stats.by_status.get('hot', 0) + stats.by_status.get('warm', 0)) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Converted</div>
+    <div class="card-value">{{ stats.by_status.get('converted', 0) }}</div>
+  </div>
+</div>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/admin/leads">View all leads</a>
+  <a class="btn" href="/admin/leads/export">Export CSV</a>
+</div>
+{% if recent_activity %}
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Time</th><th>Action</th><th>Details</th></tr></thead>
+    <tbody>
+      {% for row in recent_activity %}
+      <tr>
+        <td class="muted">{{ row.timestamp }}</td>
+        <td><span class="badge">{{ row.action }}</span></td>
+        <td>{{ row.details }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted">No activity yet. Add leads via WhatsApp to get started.</p>
+{% endif %}
+{% endblock %}

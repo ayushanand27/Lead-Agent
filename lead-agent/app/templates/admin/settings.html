@@ -1,0 +1,18 @@
+{% extends "admin/base.html" %}
+{% block title %}Settings — {{ business_name }}{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px">
+  <p class="muted" style="margin-bottom:1rem">Business configuration (set via environment variables on deploy).</p>
+  <table>
+    <tbody>
+      <tr><th>Business name</th><td>{{ business_name }}</td></tr>
+      <tr><th>Industry</th><td>{{ industry }}</td></tr>
+      <tr><th>Owner phone</th><td>{{ owner_phone }}</td></tr>
+      <tr><th>Registered owners</th><td>{{ owner_phones_display }}</td></tr>
+      <tr><th>WhatsApp bot</th><td class="muted">Message your business WhatsApp number</td></tr>
+      <tr><th>Daily summary</th><td class="muted">POST /internal/cron/daily-summary (cron secret)</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

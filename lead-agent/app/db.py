@@ -39,8 +39,15 @@ CREATE TABLE IF NOT EXISTS action_log (
 );
 CREATE INDEX IF NOT EXISTS idx_action_log_owner_phone ON action_log (owner_phone);
 
+CREATE TABLE IF NOT EXISTS pending_actions (
+    owner_phone TEXT PRIMARY KEY,
+    action_json TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE action_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_actions ENABLE ROW LEVEL SECURITY;
 """
 
 _SQLITE_INIT_SQL = """
@@ -66,6 +73,12 @@ CREATE TABLE IF NOT EXISTS action_log (
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_action_log_owner_phone ON action_log(owner_phone);
+
+CREATE TABLE IF NOT EXISTS pending_actions (
+    owner_phone TEXT PRIMARY KEY,
+    action_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -442,15 +455,102 @@ def log_action(owner_phone: str, action: str, details: str) -> int:
         return int(cursor.lastrowid)
 
 
-def fetch_action_log(owner_phone: str) -> list[dict]:
+def fetch_action_log(owner_phone: str, limit: int | None = None) -> list[dict]:
     query = _q(
         """
         SELECT id, owner_phone, action, details, timestamp
         FROM action_log
         WHERE owner_phone = %s
-        ORDER BY timestamp ASC
+        ORDER BY timestamp DESC
         """
     )
+    if limit is not None:
+        query += _q(" LIMIT %s")
+        params: tuple[Any, ...] = (owner_phone, limit)
+    else:
+        params = (owner_phone,)
+
     with get_connection() as conn:
-        rows = conn.execute(query, (owner_phone,)).fetchall()
-    return [_row_to_dict(row) for row in rows]
+        rows = conn.execute(query, params).fetchall()
+    items = [_row_to_dict(row) for row in rows]
+    if limit is None:
+        items.reverse()
+    return items
+
+
+def fetch_lead_stats(owner_phone: str) -> dict[str, Any]:
+    with get_connection() as conn:
+        total_row = conn.execute(
+            _q("SELECT COUNT(*) AS c FROM leads WHERE owner_phone = %s"),
+            (owner_phone,),
+        ).fetchone()
+        status_rows = conn.execute(
+            _q(
+                """
+                SELECT status, COUNT(*) AS c
+                FROM leads
+                WHERE owner_phone = %s
+                GROUP BY status
+                """
+            ),
+            (owner_phone,),
+        ).fetchall()
+
+    total = int(total_row["c"] if isinstance(total_row, dict) else total_row[0])
+    by_status = {str(r["status"]): int(r["c"]) for r in status_rows}
+    return {"total": total, "by_status": by_status}
+
+
+def upsert_pending_action(owner_phone: str, action_dict: dict[str, Any]) -> None:
+    import json
+
+    payload = json.dumps(action_dict)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        if _use_postgres():
+            conn.execute(
+                _q(
+                    """
+                    INSERT INTO pending_actions (owner_phone, action_json, updated_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (owner_phone)
+                    DO UPDATE SET action_json = EXCLUDED.action_json, updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                (owner_phone, payload, now),
+            )
+        else:
+            conn.execute(
+                _q(
+                    """
+                    INSERT INTO pending_actions (owner_phone, action_json, updated_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT(owner_phone) DO UPDATE SET
+                        action_json = excluded.action_json,
+                        updated_at = excluded.updated_at
+                    """
+                ),
+                (owner_phone, payload, now),
+            )
+
+
+def fetch_pending_action(owner_phone: str) -> Optional[dict[str, Any]]:
+    import json
+
+    with get_connection() as conn:
+        row = conn.execute(
+            _q("SELECT action_json FROM pending_actions WHERE owner_phone = %s"),
+            (owner_phone,),
+        ).fetchone()
+    if not row:
+        return None
+    raw = row["action_json"] if isinstance(row, dict) else row[0]
+    return json.loads(raw)
+
+
+def delete_pending_action(owner_phone: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            _q("DELETE FROM pending_actions WHERE owner_phone = %s"),
+            (owner_phone,),
+        )

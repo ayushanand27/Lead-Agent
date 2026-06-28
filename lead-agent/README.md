@@ -4,7 +4,7 @@
 
 **AI agent for Indian SMBs to manage sales leads via WhatsApp in plain English/Hindi.**
 
-LeadAgent lets a small business owner text a WhatsApp bot like they'd text an employee — *"which leads haven't I called in 2 days?"*, *"mark Ramesh as converted"*, *"send a follow-up to Priya"* — and get safe, auditable results. No app, no dashboard, no login.
+LeadAgent lets a small business owner text a WhatsApp bot like they'd text an employee — *"which leads haven't I called in 2 days?"*, *"mark Ramesh as converted"*, *"send a follow-up to Priya"* — and get safe, auditable results. A **classic dark admin dashboard** (`/admin`) complements WhatsApp for leads, activity, and CSV export.
 
 Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent loop** that decides which tools to call, and a **FastAPI webhook** wired to Meta's WhatsApp Cloud API. Every write that matters asks for confirmation first. Every query is scoped to one owner's phone number.
 
@@ -52,6 +52,9 @@ Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent l
 ## Features
 
 - **Plain English/Hindi commands** — owners interact entirely over WhatsApp
+- **Admin dashboard** — dark industry-standard UI at `/admin` (login with owner phone + password): stats, lead table, search/filter, CSV export, activity log, settings
+- **Business config** — per-deploy branding via `BUSINESS_NAME`, `BUSINESS_INDUSTRY`, `BUSINESS_OWNER_PHONES`
+- **Daily summary** — `POST /internal/cron/daily-summary` (cron secret) sends stale-lead counts on WhatsApp
 - **9 MCP tools** — 4 read (`list_leads`, `get_stale_leads`, `search_leads`, `get_lead_details`) + 5 write (`create_lead`, `update_lead_status`, `add_lead_note`, `draft_followup_message`, `send_whatsapp_message`)
 - **Confirmation flow** — destructive actions (send message, mark `converted`/`lost`) require an explicit YES before execution
 - **Owner isolation** — every query filters by `owner_phone`; one business cannot see or touch another's data
@@ -149,6 +152,13 @@ Register in Cursor or Claude Desktop, or inspect with `mcp dev app/mcp_server.py
 | `DATABASE_URL` | Production | Supabase Postgres URI — **transaction pooler**, port **6543** |
 | `DATABASE_PASSWORD` | Production (recommended) | Database password as plain text — avoids URL-encoding issues on Render |
 | `DATABASE_PATH` | Local only | SQLite path when `DATABASE_URL` is unset (default: `leads.db`) |
+| `BUSINESS_NAME` | Optional | Display name in agent + dashboard (default: `LeadAgent`) |
+| `BUSINESS_INDUSTRY` | Optional | `general`, `real_estate`, `trading`, `coaching` — tweaks system prompt |
+| `BUSINESS_OWNER_PHONES` | Optional | Comma-separated owner numbers (digits only). Empty = any sender |
+| `ADMIN_DASHBOARD_PASSWORD` | Dashboard | Password for `/admin` login (with owner phone) |
+| `ADMIN_SESSION_SECRET` | Dashboard | Random string for signed session cookies |
+| `CRON_SECRET` | Optional | Header `X-Cron-Secret` for daily summary endpoint |
+| `STALE_LEAD_DAYS` | Optional | Days without contact before "stale" (default: `2`) |
 
 ### Render database setup (recommended)
 
@@ -218,6 +228,12 @@ https://lead-agent-to63.onrender.com/health
 | `/health/ready` | GET | **Readiness** — 503 if database unreachable |
 | `/webhook` | GET | Meta webhook verification challenge |
 | `/webhook` | POST | Inbound WhatsApp messages (HMAC-validated; acks immediately, processes in background) |
+| `/admin` | GET | Owner dashboard (session login) |
+| `/admin/login` | GET/POST | Dashboard login (phone + `ADMIN_DASHBOARD_PASSWORD`) |
+| `/admin/leads` | GET | Lead list, search, filter |
+| `/admin/leads/export` | GET | CSV download |
+| `/admin/activity` | GET | Audit log |
+| `/internal/cron/daily-summary` | POST | Cron-triggered WhatsApp summary (`X-Cron-Secret`) |
 
 Set `LOG_LEVEL=DEBUG` for verbose server logs.
 
@@ -263,9 +279,9 @@ pytest tests/ -v
 
 **Known v1 limitations (acceptable for portfolio / test sandbox):**
 - Meta **test number** only (not production WABA)
-- `PendingActionStore` is in-memory (cleared on restart)
 - No Redis / job queue (single Render instance)
 - No external error monitoring (Sentry, etc.)
+- Daily summary cron must be wired manually (e.g. [cron-job.org](https://cron-job.org) free tier)
 
 ---
 
@@ -316,7 +332,12 @@ lead-agent/
 │   ├── lead_service.py    # Business logic layer
 │   ├── db.py              # Postgres (Supabase) + SQLite queries
 │   ├── models.py          # Pydantic models + tool schemas
-│   ├── pending_actions.py # In-memory confirmation store
+│   ├── pending_actions.py # DB-backed confirmation store
+│   ├── config.py          # Business name, industry, owner phones
+│   ├── summary.py         # Daily WhatsApp summary
+│   ├── admin/             # Dashboard routes + session auth
+│   ├── static/admin.css   # Dark dashboard theme
+│   ├── templates/admin/   # Jinja2 HTML pages
 │   └── whatsapp.py        # Meta Cloud API helpers
 ├── scripts/
 │   ├── test_read_tools.py
@@ -327,7 +348,8 @@ lead-agent/
 ├── tests/
 │   └── test_owner_isolation.py
 ├── migrations/
-│   └── 001_leads_schema.sql
+│   ├── 001_leads_schema.sql
+│   └── 002_pending_actions.sql
 ├── DEPLOY.md              # Full Meta + Supabase + Render guide
 ├── runtime.txt            # Python 3.11 for Render
 ├── requirements.txt

@@ -65,9 +65,12 @@ def sample_webhook_payload(owner_phone: str = "919111111111", text: str = "hello
 
 
 def main() -> None:
+    from app import db
+
     db_file = Path(os.environ["DATABASE_PATH"])
     if db_file.exists():
         db_file.unlink()
+    db.init_db()
 
     client = TestClient(app)
 
@@ -178,6 +181,35 @@ def main() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
     print("PASS: readiness check ok")
+
+    # 7. Admin login + dashboard
+    print("\n--- Test 7: Admin dashboard login ---")
+    response = client.get("/admin/login")
+    assert response.status_code == 200
+    assert "LeadAgent" in response.text or "login" in response.text.lower()
+
+    response = client.post(
+        "/admin/login",
+        data={"owner_phone": "919111111111", "password": "wrong"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 401
+
+    response = client.post(
+        "/admin/login",
+        data={
+            "owner_phone": "919111111111",
+            "password": os.environ["ADMIN_DASHBOARD_PASSWORD"],
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/"
+
+    response = client.get("/admin/", cookies=response.cookies)
+    assert response.status_code == 200
+    assert "Dashboard" in response.text
+    print("PASS: admin login and dashboard")
 
     print("\nAll webhook tests passed.")
 

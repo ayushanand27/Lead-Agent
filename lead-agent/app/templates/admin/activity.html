@@ -1,0 +1,22 @@
+{% extends "admin/base.html" %}
+{% block title %}Activity — {{ business_name }}{% endblock %}
+{% block page_title %}Activity log{% endblock %}
+{% block content %}
+<p class="muted" style="margin-bottom:1rem">Full audit trail of actions on your leads.</p>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Time</th><th>Action</th><th>Details</th></tr></thead>
+    <tbody>
+      {% for row in activity %}
+      <tr>
+        <td class="muted">{{ row.timestamp }}</td>
+        <td><span class="badge">{{ row.action }}</span></td>
+        <td>{{ row.details }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No activity recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

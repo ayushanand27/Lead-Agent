@@ -7,19 +7,26 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import time
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.sessions import SessionMiddleware
 
 from app import db
+from app.admin.auth import get_session_secret
+from app.admin.routes import router as admin_router
 from app.agent import handle_message
 from app.logging_config import configure_logging
+from app.summary import send_daily_summaries
 from app.whatsapp import send_whatsapp_reply, verify_webhook
 
 load_dotenv()
@@ -31,10 +38,13 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="LeadAgent",
     description="WhatsApp Lead Management Agent (MCP + Groq)",
-    version="1.0.0",
+    version="1.1.0",
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SessionMiddleware, secret_key=get_session_secret(), https_only=False)
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+app.include_router(admin_router, prefix="/admin")
 
 
 @app.on_event("startup")
@@ -118,6 +128,17 @@ def health_ready() -> Response:
             content={"status": "unavailable", "database": "unavailable"},
         )
     return JSONResponse(content={"status": "ready", "database": "connected"})
+
+
+@app.post("/internal/cron/daily-summary")
+async def cron_daily_summary(request: Request) -> JSONResponse:
+    """Trigger morning lead summaries (protect with CRON_SECRET header)."""
+    secret = os.getenv("CRON_SECRET", "")
+    provided = request.headers.get("X-Cron-Secret", "")
+    if not secret or not secrets.compare_digest(provided, secret):
+        return JSONResponse(status_code=403, content={"error": "Forbidden"})
+    result = await send_daily_summaries()
+    return JSONResponse(content={"status": "ok", **result})
 
 
 @app.get("/webhook")

@@ -1,6 +1,11 @@
-"""In-memory store for pending write actions awaiting owner confirmation."""
+"""Persistent store for pending write actions awaiting owner confirmation."""
 
+from __future__ import annotations
+
+import json
 from typing import Any, Optional
+
+from app import db
 
 TERMINAL_STATUSES = frozenset({"converted", "lost"})
 
@@ -31,7 +36,6 @@ def is_confirmation_message(text: str) -> bool:
         return False
     if normalized in CONFIRMATION_KEYWORDS:
         return True
-    # Allow short affirmatives with trailing punctuation, e.g. "yes!"
     stripped = normalized.rstrip("!.?")
     return stripped in CONFIRMATION_KEYWORDS
 
@@ -46,26 +50,22 @@ def requires_confirmation(action: str, new_status: str | None = None) -> bool:
 
 
 class PendingActionStore:
-    """Per-owner pending actions (in-process dict for v1)."""
-
-    def __init__(self) -> None:
-        self._store: dict[str, dict[str, Any]] = {}
+    """Per-owner pending actions persisted in the database."""
 
     def set_pending(self, owner_phone: str, action_dict: dict[str, Any]) -> None:
-        self._store[owner_phone] = dict(action_dict)
+        db.upsert_pending_action(owner_phone, action_dict)
 
     def get_pending(self, owner_phone: str) -> Optional[dict[str, Any]]:
-        pending = self._store.get(owner_phone)
+        pending = db.fetch_pending_action(owner_phone)
         if pending is None:
             return None
         return dict(pending)
 
     def clear_pending(self, owner_phone: str) -> None:
-        self._store.pop(owner_phone, None)
+        db.delete_pending_action(owner_phone)
 
     def has_pending(self, owner_phone: str) -> bool:
-        return owner_phone in self._store
+        return db.fetch_pending_action(owner_phone) is not None
 
 
-# Module-level singleton for agent loop (step 4) and tests
 pending_store = PendingActionStore()

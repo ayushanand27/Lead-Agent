@@ -16,3 +16,6 @@ def isolated_test_env(tmp_path, monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "test_verify_token")
     monkeypatch.setenv("WHATSAPP_APP_SECRET", "test_app_secret")
+    monkeypatch.setenv("ADMIN_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("ADMIN_DASHBOARD_PASSWORD", "test-admin-password")
+    monkeypatch.setenv("BUSINESS_OWNER_PHONES", "919111111111")

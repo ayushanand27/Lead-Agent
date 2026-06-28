@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}{{ business_name }} Admin{% endblock %}</title>
+  <link rel="stylesheet" href="/static/admin.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        LeadAgent
+        <span>{{ business_name }}</span>
+      </div>
+      <nav class="nav">
+        <a href="/admin/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/admin/leads" class="{% if active_page == 'leads' %}active{% endif %}">Leads</a>
+        <a href="/admin/activity" class="{% if active_page == 'activity' %}active{% endif %}">Activity</a>
+        <a href="/admin/settings" class="{% if active_page == 'settings' %}active{% endif %}">Settings</a>
+      </nav>
+      <div style="margin-top:auto;padding:0.75rem;font-size:0.75rem;color:var(--muted)">
+        {{ owner_phone }}
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+        <form method="post" action="/admin/logout" style="margin:0">
+          <button type="submit" class="btn">Sign out</button>
+        </form>
+      </header>
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>

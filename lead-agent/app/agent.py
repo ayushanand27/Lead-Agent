@@ -26,6 +26,7 @@ from app.models import (
     SendWhatsappMessageInput,
     UpdateLeadStatusInput,
 )
+from app.config import build_system_prompt, is_registered_owner
 from app.pending_actions import is_confirmation_message, pending_store, requires_confirmation
 
 logger = logging.getLogger(__name__)
@@ -35,20 +36,6 @@ GENERIC_ERROR_REPLY = (
 )
 CANCELLED_PREFIX = "Previous action cancelled. Processing your new request...\n\n"
 MAX_AGENT_ITERATIONS = 8
-
-SYSTEM_PROMPT = """You are a WhatsApp lead management assistant for Indian small businesses.
-
-You help business owners manage their sales leads using tools to read and write lead data.
-
-Rules:
-- Always respond in the same language the owner used (Hindi or English).
-- For read operations, use tools and then summarize results as clean numbered lists — never raw JSON.
-- Never expose technical details (database errors, internal IDs, stack traces) to the owner.
-- Keep replies short — this is WhatsApp, not email.
-- When the owner wants to send a message to a lead, first find the lead (search if needed), then you MUST call draft_followup_message — never write draft text yourself without calling that tool.
-- For status updates to converted or lost, use update_lead_status — the system will ask the owner to confirm.
-- If you are unsure which lead the owner means, search first or ask for the name.
-"""
 
 # OpenAI-compatible tool schemas (owner_phone is injected server-side, not by the model)
 # Optional fields use nullable types — Groq rejects null for non-nullable schema properties.
@@ -738,7 +725,7 @@ async def _run_agent_loop(owner_phone: str, message_text: str) -> str:
         return GENERIC_ERROR_REPLY
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt()},
         {"role": "user", "content": message_text},
     ]
     last_draft_result: dict | None = None
@@ -837,6 +824,9 @@ async def handle_message(owner_phone: str, message_text: str) -> str:
     text = (message_text or "").strip()
     if not text:
         return "Send me a message about your leads — e.g. 'list all my leads' or 'who haven't I called in 2 days?'"
+
+    if not is_registered_owner(owner_phone):
+        return "This number is not registered for this business account. Please contact your administrator."
 
     pending = pending_store.get_pending(owner_phone)
     if pending is not None:
