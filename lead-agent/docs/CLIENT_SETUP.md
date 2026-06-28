@@ -16,7 +16,7 @@ After deploy, set these in **Render → Environment**:
 | `WHATSAPP_*` | Meta developer dashboard |
 | `DATABASE_URL` + `DATABASE_PASSWORD` | Supabase pooler |
 | `BUSINESS_NAME` | `Sharma Realty` |
-| `BUSINESS_OWNER_PHONES` | `917073245149` |
+| `BUSINESS_OWNER_PHONES` | `917073245149` or `917073245149,919876543210` (partners share leads) |
 | `ADMIN_DASHBOARD_PASSWORD` | See §2 below |
 | `ADMIN_SESSION_SECRET` | Long random string |
 
@@ -34,6 +34,8 @@ After deploy, set these in **Render → Environment**:
 | Variable | Purpose |
 |----------|---------|
 | `GOOGLE_SHEETS_WEBHOOK_URL` | Apps Script URL (§3) |
+| `NOTIFY_OWNERS_ON_WEBHOOK` | `true` — WhatsApp alert on new webhook lead |
+| `SENTRY_DSN` | Optional error monitoring (§10) |
 | `BUSINESS_INDUSTRY` | `general` \| `real_estate` \| `trading` \| `coaching` |
 
 ---
@@ -59,7 +61,7 @@ Login still uses the **plain password** you typed — only the stored env value 
 ### A. Create sheet
 
 1. Google Sheets → new spreadsheet → name tab **Leads**
-2. Row 1 headers: `id | name | phone | source | status | notes | consent_source | consent_at | last_contacted_at | created_at | owner_phone`
+2. Row 1 headers: `id | name | phone | source | status | notes | tags | consent_source | consent_at | last_contacted_at | created_at | owner_phone`
 
 ### B. Apps Script
 
@@ -74,20 +76,31 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   var data = JSON.parse(e.postData.contents);
-  sheet.appendRow([
+  var row = [
     data.id || "",
     data.name || "",
     data.phone || "",
     data.source || "",
     data.status || "",
     data.notes || "",
+    data.tags || "",
     data.consent_source || "",
     data.consent_at || "",
     data.last_contacted_at || "",
     data.created_at || "",
     data.owner_phone || ""
-  ]);
-  return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+  ];
+  var id = String(data.id || "");
+  var lastRow = sheet.getLastRow();
+  for (var i = 2; i <= lastRow; i++) {
+    if (String(sheet.getRange(i, 1).getValue()) === id) {
+      sheet.getRange(i, 1, 1, row.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, updated: true }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  sheet.appendRow(row);
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, created: true }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 ```

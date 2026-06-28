@@ -11,6 +11,8 @@ from typing import Any, Iterator, Optional
 
 from dotenv import load_dotenv
 
+from app.config import get_owner_scope
+
 load_dotenv()
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "leads.db"
@@ -27,6 +29,7 @@ CREATE TABLE IF NOT EXISTS leads (
     last_contacted_at TIMESTAMPTZ,
     consent_source TEXT,
     consent_at TIMESTAMPTZ,
+    tags TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_leads_owner_phone ON leads (owner_phone);
@@ -64,6 +67,7 @@ CREATE TABLE IF NOT EXISTS leads (
     last_contacted_at TEXT,
     consent_source TEXT,
     consent_at TEXT,
+    tags TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_leads_owner_phone ON leads(owner_phone);
@@ -173,6 +177,7 @@ def _apply_schema_migrations(conn: Any) -> None:
     if _use_postgres():
         conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS consent_source TEXT")
         conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS consent_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS tags TEXT")
         return
 
     columns = {
@@ -183,10 +188,20 @@ def _apply_schema_migrations(conn: Any) -> None:
         conn.execute("ALTER TABLE leads ADD COLUMN consent_source TEXT")
     if "consent_at" not in columns:
         conn.execute("ALTER TABLE leads ADD COLUMN consent_at TEXT")
+    if "tags" not in columns:
+        conn.execute("ALTER TABLE leads ADD COLUMN tags TEXT")
+
+
+def _scope_sql(acting_phone: str, column: str = "owner_phone") -> tuple[str, list[str]]:
+    scope = get_owner_scope(acting_phone)
+    if len(scope) == 1:
+        return f"{column} = %s", scope
+    placeholders = ", ".join("%s" for _ in scope)
+    return f"{column} IN ({placeholders})", scope
 
 
 _LEAD_COLUMNS = (
-    "id, owner_phone, name, phone, source, status, notes, "
+    "id, owner_phone, name, phone, source, status, notes, tags, "
     "last_contacted_at, consent_source, consent_at, created_at"
 )
 
@@ -281,12 +296,13 @@ def fetch_leads_for_owner(
     owner_phone: str,
     status_filter: Optional[str] = None,
 ) -> list[dict]:
+    scope_clause, scope_params = _scope_sql(owner_phone)
     query = f"""
         SELECT {_LEAD_COLUMNS}
         FROM leads
-        WHERE owner_phone = %s
+        WHERE {scope_clause}
     """
-    params: list[Any] = [owner_phone]
+    params: list[Any] = list(scope_params)
 
     if status_filter is not None:
         query += " AND status = %s"
@@ -301,11 +317,12 @@ def fetch_leads_for_owner(
 
 def fetch_stale_leads(owner_phone: str, days_since_contact: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days_since_contact)).isoformat()
+    scope_clause, scope_params = _scope_sql(owner_phone)
     query = _q(
         f"""
         SELECT {_LEAD_COLUMNS}
         FROM leads
-        WHERE owner_phone = %s
+        WHERE {scope_clause}
           AND status NOT IN ('converted', 'lost')
           AND (
                 last_contacted_at IS NULL
@@ -315,7 +332,7 @@ def fetch_stale_leads(owner_phone: str, days_since_contact: int) -> list[dict]:
         """
     )
     with get_connection() as conn:
-        rows = conn.execute(query, (owner_phone, cutoff)).fetchall()
+        rows = conn.execute(query, (*scope_params, cutoff)).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
@@ -323,39 +340,44 @@ def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
     pattern = f"%{query_text.strip()}%"
     if _use_postgres():
         notes_expr = "COALESCE(notes, '')"
+        tags_expr = "COALESCE(tags, '')"
     else:
         notes_expr = "IFNULL(notes, '')"
+        tags_expr = "IFNULL(tags, '')"
 
+    scope_clause, scope_params = _scope_sql(owner_phone)
     query = _q(
         f"""
         SELECT {_LEAD_COLUMNS}
         FROM leads
-        WHERE owner_phone = %s
+        WHERE {scope_clause}
           AND (
                 name LIKE %s
                 OR phone LIKE %s
                 OR source LIKE %s
                 OR {notes_expr} LIKE %s
+                OR {tags_expr} LIKE %s
               )
         ORDER BY created_at DESC
         """
     )
-    params = (owner_phone, pattern, pattern, pattern, pattern)
+    params = (*scope_params, pattern, pattern, pattern, pattern, pattern)
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
 def fetch_lead_by_id(owner_phone: str, lead_id: int) -> Optional[dict]:
+    scope_clause, scope_params = _scope_sql(owner_phone)
     query = _q(
         f"""
         SELECT {_LEAD_COLUMNS}
         FROM leads
-        WHERE id = %s AND owner_phone = %s
+        WHERE id = %s AND {scope_clause}
         """
     )
     with get_connection() as conn:
-        row = conn.execute(query, (lead_id, owner_phone)).fetchone()
+        row = conn.execute(query, (lead_id, *scope_params)).fetchone()
     return _row_to_dict(row) if row else None
 
 
@@ -367,23 +389,36 @@ def insert_lead(
     notes: Optional[str] = None,
     status: str = "new",
     consent_source: Optional[str] = None,
+    tags: Optional[str] = None,
 ) -> int:
     now = datetime.now(timezone.utc).isoformat()
     consent_at = now if consent_source else None
+    normalized_tags = _normalize_tags(tags) if tags else None
     with get_connection() as conn:
         if _use_postgres():
             row = conn.execute(
                 _q(
                     """
                     INSERT INTO leads (
-                        owner_phone, name, phone, source, status, notes,
+                        owner_phone, name, phone, source, status, notes, tags,
                         last_contacted_at, consent_source, consent_at, created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
                     RETURNING id
                     """
                 ),
-                (owner_phone, name, phone, source, status, notes, consent_source, consent_at, now),
+                (
+                    owner_phone,
+                    name,
+                    phone,
+                    source,
+                    status,
+                    notes,
+                    normalized_tags,
+                    consent_source,
+                    consent_at,
+                    now,
+                ),
             ).fetchone()
             return int(row["id"])
 
@@ -391,30 +426,94 @@ def insert_lead(
             _q(
                 """
                 INSERT INTO leads (
-                    owner_phone, name, phone, source, status, notes,
+                    owner_phone, name, phone, source, status, notes, tags,
                     last_contacted_at, consent_source, consent_at, created_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
                 """
             ),
-            (owner_phone, name, phone, source, status, notes, consent_source, consent_at, now),
+            (
+                owner_phone,
+                name,
+                phone,
+                source,
+                status,
+                notes,
+                normalized_tags,
+                consent_source,
+                consent_at,
+                now,
+            ),
         )
         return int(cursor.lastrowid)
 
 
+def _normalize_tags(raw: str) -> str:
+    parts = [t.strip().lower() for t in raw.split(",") if t.strip()]
+    return ", ".join(dict.fromkeys(parts))
+
+
 def update_lead_status(owner_phone: str, lead_id: int, new_status: str) -> bool:
+    scope_clause, scope_params = _scope_sql(owner_phone)
     with get_connection() as conn:
         cursor = conn.execute(
             _q(
-                """
+                f"""
                 UPDATE leads
                 SET status = %s
-                WHERE id = %s AND owner_phone = %s
+                WHERE id = %s AND {scope_clause}
                 """
             ),
-            (new_status, lead_id, owner_phone),
+            (new_status, lead_id, *scope_params),
         )
         return cursor.rowcount > 0
+
+
+def update_lead_fields(
+    owner_phone: str,
+    lead_id: int,
+    *,
+    status: Optional[str] = None,
+    notes: Optional[str] = None,
+    tags: Optional[str] = None,
+) -> bool:
+    lead = fetch_lead_by_id(owner_phone, lead_id)
+    if lead is None:
+        return False
+
+    fields: list[str] = []
+    values: list[Any] = []
+    if status is not None:
+        fields.append("status = %s")
+        values.append(status)
+    if notes is not None:
+        fields.append("notes = %s")
+        values.append(notes)
+    if tags is not None:
+        fields.append("tags = %s")
+        values.append(_normalize_tags(tags) if tags else None)
+
+    if not fields:
+        return True
+
+    scope_clause, scope_params = _scope_sql(owner_phone)
+    values.extend([lead_id, *scope_params])
+    with get_connection() as conn:
+        cursor = conn.execute(
+            _q(f"UPDATE leads SET {', '.join(fields)} WHERE id = %s AND {scope_clause}"),
+            values,
+        )
+        return cursor.rowcount > 0
+
+
+def append_lead_tags(owner_phone: str, lead_id: int, new_tags: str) -> bool:
+    lead = fetch_lead_by_id(owner_phone, lead_id)
+    if lead is None:
+        return False
+
+    existing = lead.get("tags") or ""
+    merged = _normalize_tags(f"{existing}, {new_tags}" if existing else new_tags)
+    return update_lead_fields(owner_phone, lead_id, tags=merged)
 
 
 def append_lead_note(owner_phone: str, lead_id: int, note_line: str) -> bool:
@@ -425,32 +524,34 @@ def append_lead_note(owner_phone: str, lead_id: int, note_line: str) -> bool:
     existing = lead.get("notes") or ""
     updated_notes = f"{existing}\n{note_line}" if existing else note_line
 
+    scope_clause, scope_params = _scope_sql(owner_phone)
     with get_connection() as conn:
         cursor = conn.execute(
             _q(
-                """
+                f"""
                 UPDATE leads
                 SET notes = %s
-                WHERE id = %s AND owner_phone = %s
+                WHERE id = %s AND {scope_clause}
                 """
             ),
-            (updated_notes, lead_id, owner_phone),
+            (updated_notes, lead_id, *scope_params),
         )
         return cursor.rowcount > 0
 
 
 def update_last_contacted_at(owner_phone: str, lead_id: int) -> bool:
     now = datetime.now(timezone.utc).isoformat()
+    scope_clause, scope_params = _scope_sql(owner_phone)
     with get_connection() as conn:
         cursor = conn.execute(
             _q(
-                """
+                f"""
                 UPDATE leads
                 SET last_contacted_at = %s
-                WHERE id = %s AND owner_phone = %s
+                WHERE id = %s AND {scope_clause}
                 """
             ),
-            (now, lead_id, owner_phone),
+            (now, lead_id, *scope_params),
         )
         return cursor.rowcount > 0
 
@@ -483,19 +584,20 @@ def log_action(owner_phone: str, action: str, details: str) -> int:
 
 
 def fetch_action_log(owner_phone: str, limit: int | None = None) -> list[dict]:
+    scope_clause, scope_params = _scope_sql(owner_phone)
     query = _q(
-        """
+        f"""
         SELECT id, owner_phone, action, details, timestamp
         FROM action_log
-        WHERE owner_phone = %s
+        WHERE {scope_clause}
         ORDER BY timestamp DESC
         """
     )
     if limit is not None:
         query += _q(" LIMIT %s")
-        params: tuple[Any, ...] = (owner_phone, limit)
+        params: tuple[Any, ...] = (*scope_params, limit)
     else:
-        params = (owner_phone,)
+        params = tuple(scope_params)
 
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
@@ -506,21 +608,22 @@ def fetch_action_log(owner_phone: str, limit: int | None = None) -> list[dict]:
 
 
 def fetch_lead_stats(owner_phone: str) -> dict[str, Any]:
+    scope_clause, scope_params = _scope_sql(owner_phone)
     with get_connection() as conn:
         total_row = conn.execute(
-            _q("SELECT COUNT(*) AS c FROM leads WHERE owner_phone = %s"),
-            (owner_phone,),
+            _q(f"SELECT COUNT(*) AS c FROM leads WHERE {scope_clause}"),
+            scope_params,
         ).fetchone()
         status_rows = conn.execute(
             _q(
-                """
+                f"""
                 SELECT status, COUNT(*) AS c
                 FROM leads
-                WHERE owner_phone = %s
+                WHERE {scope_clause}
                 GROUP BY status
                 """
             ),
-            (owner_phone,),
+            scope_params,
         ).fetchall()
 
     total = int(total_row["c"] if isinstance(total_row, dict) else total_row[0])

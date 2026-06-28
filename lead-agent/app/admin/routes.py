@@ -21,7 +21,7 @@ from app.admin.auth import (
     require_owner,
 )
 from app.config import get_owner_phones
-from app.integrations.sheets import is_sheets_sync_enabled, sync_all_leads_to_sheet
+from app.integrations.sheets import is_sheets_sync_enabled, sync_all_leads_to_sheet, sync_lead_to_sheet
 from app.models import LEAD_STATUS_VALUES
 from app.security.audit import log_admin_event
 from app.security.ip_allowlist import is_ip_allowed
@@ -194,6 +194,55 @@ async def sync_leads_to_sheets(request: Request):
     )
 
 
+@router.get("/leads/{lead_id}/edit", response_class=HTMLResponse)
+async def edit_lead_page(request: Request, lead_id: int) -> HTMLResponse:
+    if not get_session_owner(request):
+        return _redirect_login()
+    owner = require_owner(request)
+    lead = db.fetch_lead_by_id(owner, lead_id)
+    if not lead:
+        return RedirectResponse(url="/admin/leads", status_code=303)
+    ctx = dashboard_context(
+        request,
+        active_page="leads",
+        lead=lead,
+        statuses=STATUSES,
+    )
+    return templates.TemplateResponse(request, "admin/lead_edit.html", ctx)
+
+
+@router.post("/leads/{lead_id}/edit", response_model=None)
+async def edit_lead_submit(
+    request: Request,
+    lead_id: int,
+    status: str = Form(...),
+    notes: str = Form(""),
+    tags: str = Form(""),
+):
+    if not get_session_owner(request):
+        return _redirect_login()
+    owner = require_owner(request)
+    lead = db.fetch_lead_by_id(owner, lead_id)
+    if not lead:
+        return RedirectResponse(url="/admin/leads", status_code=303)
+
+    if status not in LEAD_STATUS_VALUES:
+        return RedirectResponse(url=f"/admin/leads/{lead_id}/edit?error=status", status_code=303)
+
+    db.update_lead_fields(
+        owner,
+        lead_id,
+        status=status,
+        notes=notes.strip() or None,
+        tags=tags.strip() or None,
+    )
+    db.log_action(owner, "lead_updated", f"Dashboard edit lead id={lead_id} status={status}")
+    updated = db.fetch_lead_by_id(owner, lead_id)
+    if updated:
+        sync_lead_to_sheet(updated)
+    return RedirectResponse(url="/admin/leads", status_code=303)
+
+
 @router.get("/leads/export", response_model=None)
 async def export_leads(request: Request, q: str | None = None):
     if not get_session_owner(request):
@@ -214,6 +263,7 @@ async def export_leads(request: Request, q: str | None = None):
             "source",
             "status",
             "notes",
+            "tags",
             "consent_source",
             "consent_at",
             "last_contacted_at",

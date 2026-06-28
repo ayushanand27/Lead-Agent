@@ -78,6 +78,7 @@ def sync_lead_to_sheet(lead: dict) -> bool:
         "last_contacted_at": _json_safe(lead.get("last_contacted_at")),
         "created_at": _json_safe(lead.get("created_at")),
         "owner_phone": _json_safe(lead.get("owner_phone")),
+        "tags": _json_safe(lead.get("tags")),
     }
 
     body = json.dumps(payload)

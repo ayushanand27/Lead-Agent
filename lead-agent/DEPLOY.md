@@ -229,7 +229,26 @@ Header: X-Cron-Secret: <your CRON_SECRET>
 
 ---
 
-## 6. Going to real production (later)
+## 6. Render Starter (client production — no cold start)
+
+When a client pays, upgrade from **Free** to **Starter** (~$7/mo):
+
+1. Render dashboard → your service → **Settings → Instance Type → Starter**
+2. Keep same env vars — no code change
+3. Optional: remove UptimeRobot ping (not needed on Starter)
+4. Set `ENVIRONMENT=production` and `SENTRY_DSN` if using monitoring
+
+**Client handover checklist:**
+- [ ] Real WABA number on Meta
+- [ ] Render Starter + custom domain (optional)
+- [ ] `ADMIN_DASHBOARD_PASSWORD` as bcrypt hash
+- [ ] Google Sheets upsert script (CLIENT_SETUP.md §3)
+- [ ] Zapier/IndiaMART webhook (docs/ZAPIER_INDIA_MART.md)
+- [ ] Give client docs/CLIENT_GUIDE.md
+
+---
+
+## 7. Going to real production (later)
 
 Test number `+1 555…` is for development only. For real Indian SMB customers:
 

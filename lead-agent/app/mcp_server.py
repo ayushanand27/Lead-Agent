@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from app import lead_service
 from app.models import (
     AddLeadNoteInput,
+    AddLeadTagsInput,
     CreateLeadInput,
     DraftFollowupMessageInput,
     GetLeadDetailsInput,
@@ -143,6 +144,18 @@ def add_lead_note(owner_phone: str, lead_id: int, note: str) -> str:
     params = AddLeadNoteInput(owner_phone=owner_phone, lead_id=lead_id, note=note)
     return _serialize(
         lead_service.add_lead_note(params.owner_phone, params.lead_id, params.note)
+    )
+
+
+@mcp.tool(
+    name="add_lead_tags",
+    description="Add comma-separated tags to a lead (e.g. site-visit, urgent, noida).",
+)
+def add_lead_tags(owner_phone: str, lead_id: int, tags: str) -> str:
+    """Append tags to a lead."""
+    params = AddLeadTagsInput(owner_phone=owner_phone, lead_id=lead_id, tags=tags)
+    return _serialize(
+        lead_service.add_lead_tags(params.owner_phone, params.lead_id, params.tags)
     )
 
 

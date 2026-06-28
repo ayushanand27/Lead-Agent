@@ -159,6 +159,8 @@ Register in Cursor or Claude Desktop, or inspect with `mcp dev app/mcp_server.py
 | `ADMIN_SESSION_SECRET` | Dashboard | Random string for signed session cookies |
 | `CRON_SECRET` | Optional | Header `X-Cron-Secret` for daily summary endpoint |
 | `STALE_LEAD_DAYS` | Optional | Days without contact before "stale" (default: `2`) |
+| `NOTIFY_OWNERS_ON_WEBHOOK` | Optional | WhatsApp alert owners on `POST /api/leads` (default: `true`) |
+| `SENTRY_DSN` | Optional | Error monitoring (Sentry) |
 
 ### Render database setup (recommended)
 
@@ -179,7 +181,8 @@ DATABASE_PASSWORD=your-database-password
 ## Production deployment
 
 **Step-by-step guide:** **[DEPLOY.md](DEPLOY.md)** — Supabase, Render, Meta webhook, and keep-alive.  
-**Client handover ($1000 tier):** **[docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md)** — bcrypt, Google Sheets, lead webhook, cron.
+**Client handover ($1000 tier):** **[docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md)** — bcrypt, Google Sheets, lead webhook, cron.  
+**Command guide:** **[docs/CLIENT_GUIDE.md](docs/CLIENT_GUIDE.md)** · **IndiaMART/Zapier:** **[docs/ZAPIER_INDIA_MART.md](docs/ZAPIER_INDIA_MART.md)**
 
 ### Summary
 

@@ -65,6 +65,29 @@ def is_registered_owner(phone: str) -> bool:
     return normalized in {p.lstrip("+") for p in allowed}
 
 
+def get_owner_scope(acting_phone: str) -> list[str]:
+    """
+    Phones whose leads are visible to the acting owner.
+    Registered partners (all in BUSINESS_OWNER_PHONES) share one pool.
+  Unregistered numbers only see their own owner_phone rows.
+    """
+    allowed = get_owner_phones()
+    normalized = acting_phone.strip().lstrip("+")
+    if allowed:
+        allowed_set = sorted({p.strip().lstrip("+") for p in allowed if p.strip()})
+        if normalized in allowed_set:
+            return allowed_set
+        return [normalized] if normalized else []
+    return [normalized] if normalized else []
+
+
+def primary_owner_phone() -> str | None:
+    phones = get_owner_phones()
+    if not phones:
+        return None
+    return phones[0].strip().lstrip("+")
+
+
 def build_system_prompt() -> str:
     industry = get_industry()
     industry_hint = INDUSTRY_PROMPTS.get(industry, INDUSTRY_PROMPTS["general"])
@@ -90,4 +113,6 @@ Rules:
 - If you are unsure which lead the owner means, search first or ask for the name.
 - The owner can also use the web dashboard at /admin for exports and reports.
 - Leads captured via website webhook include consent metadata for compliance.
+- Use add_lead_tags to label leads (e.g. site-visit, urgent, noida) — comma-separated tags.
+- Multiple registered owners share the same lead database for this business.
 """

@@ -85,6 +85,16 @@ class AddLeadNoteInput(BaseModel):
     note: str = Field(..., min_length=1, description="Note text to append")
 
 
+class AddLeadTagsInput(BaseModel):
+    owner_phone: str = Field(..., description="WhatsApp number of the business owner")
+    lead_id: int = Field(..., ge=1, description="Lead primary key")
+    tags: str = Field(
+        ...,
+        min_length=1,
+        description="Comma-separated tags e.g. site-visit, urgent, noida",
+    )
+
+
 class DraftFollowupMessageInput(BaseModel):
     owner_phone: str = Field(..., description="WhatsApp number of the business owner")
     lead_id: int = Field(..., ge=1, description="Lead primary key")

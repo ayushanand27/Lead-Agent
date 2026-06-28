@@ -17,6 +17,7 @@ from app.lead_service import GROQ_MODEL
 from app.models import (
     LEAD_STATUS_VALUES,
     AddLeadNoteInput,
+    AddLeadTagsInput,
     CreateLeadInput,
     DraftFollowupMessageInput,
     GetLeadDetailsInput,
@@ -155,6 +156,21 @@ GROQ_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "add_lead_tags",
+            "description": "Add comma-separated tags to a lead (e.g. site-visit, urgent).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lead_id": {"type": "integer"},
+                    "tags": {"type": "string"},
+                },
+                "required": ["lead_id", "tags"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "draft_followup_message",
             "description": "Draft a follow-up WhatsApp message (does not send).",
             "parameters": {
@@ -230,6 +246,12 @@ TOOL_REGISTRY: dict[str, tuple[type[BaseModel], ToolExecutor]] = {
         AddLeadNoteInput,
         lambda owner, args: lead_service.add_lead_note(
             owner, args["lead_id"], args["note"]
+        ),
+    ),
+    "add_lead_tags": (
+        AddLeadTagsInput,
+        lambda owner, args: lead_service.add_lead_tags(
+            owner, args["lead_id"], args["tags"]
         ),
     ),
     "draft_followup_message": (
@@ -313,6 +335,7 @@ def validate_and_prepare_tool(
         "get_lead_details",
         "update_lead_status",
         "add_lead_note",
+        "add_lead_tags",
         "draft_followup_message",
         "send_whatsapp_message",
     }:

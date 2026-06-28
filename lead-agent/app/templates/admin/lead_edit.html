@@ -1,0 +1,27 @@
+{% extends "admin/base.html" %}
+{% block title %}Edit lead — {{ business_name }}{% endblock %}
+{% block page_title %}Edit lead #{{ lead.id }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px">
+  <p class="muted" style="margin-bottom:1rem">{{ lead.name }} · {{ lead.phone }} · {{ lead.source }}</p>
+  <form method="post" action="/admin/leads/{{ lead.id }}/edit" class="login-card" style="box-shadow:none;padding:0">
+    <label>Status
+      <select name="status">
+        {% for s in statuses %}
+        <option value="{{ s }}" {% if lead.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Tags <span class="muted">(comma-separated)</span>
+      <input type="text" name="tags" value="{{ lead.tags or '' }}" placeholder="site-visit, urgent" />
+    </label>
+    <label>Notes
+      <textarea name="notes" rows="6">{{ lead.notes or '' }}</textarea>
+    </label>
+    <div style="display:flex;gap:0.5rem;margin-top:1rem">
+      <button type="submit" class="btn btn-primary">Save changes</button>
+      <a class="btn" href="/admin/leads">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

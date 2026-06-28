@@ -34,13 +34,17 @@ from app.whatsapp import send_whatsapp_reply, verify_webhook
 load_dotenv()
 configure_logging()
 
+from app.monitoring import init_sentry
+
+init_sentry()
+
 logger = logging.getLogger(__name__)
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="LeadAgent",
     description="WhatsApp Lead Management Agent (MCP + Groq)",
-    version="1.2.0",
+    version="1.3.0",
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

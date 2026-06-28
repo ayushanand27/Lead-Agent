@@ -6,14 +6,15 @@ import os
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app import db
-from app.config import get_owner_phones
+from app.config import get_owner_phones, primary_owner_phone
 from app.integrations.sheets import sync_lead_to_sheet
 from app.models import LeadStatus
+from app.notifications import notify_owners_new_lead
 
 router = APIRouter(tags=["api"])
 
@@ -23,13 +24,13 @@ class LeadCaptureBody(BaseModel):
     phone: str = Field(..., min_length=5, max_length=30)
     source: str = Field(default="website", max_length=100)
     notes: str | None = Field(default=None, max_length=2000)
+    tags: str | None = Field(default=None, max_length=500)
     consent_source: str | None = Field(default="web_form", max_length=100)
     owner_phone: str | None = Field(default=None, max_length=20)
 
 
 def _default_owner_phone() -> str | None:
-    phones = get_owner_phones()
-    return phones[0].lstrip("+") if phones else None
+    return primary_owner_phone()
 
 
 def _verify_lead_webhook_secret(request: Request) -> bool:
@@ -40,8 +41,17 @@ def _verify_lead_webhook_secret(request: Request) -> bool:
     return bool(provided) and secrets.compare_digest(provided, secret)
 
 
+async def _after_webhook_lead(lead: dict, source: str) -> None:
+    sync_lead_to_sheet(lead)
+    await notify_owners_new_lead(lead, channel=source)
+
+
 @router.post("/leads")
-async def capture_lead(request: Request, body: LeadCaptureBody) -> JSONResponse:
+async def capture_lead(
+    request: Request,
+    body: LeadCaptureBody,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
     """
     Capture a lead from an external form (website, Zapier, IndiaMART).
     Requires header: X-Lead-Webhook-Secret
@@ -64,6 +74,7 @@ async def capture_lead(request: Request, body: LeadCaptureBody) -> JSONResponse:
         notes=body.notes.strip() if body.notes else None,
         status=LeadStatus.NEW.value,
         consent_source=body.consent_source.strip() if body.consent_source else None,
+        tags=body.tags.strip() if body.tags else None,
     )
     db.log_action(
         owner,
@@ -72,7 +83,7 @@ async def capture_lead(request: Request, body: LeadCaptureBody) -> JSONResponse:
     )
     lead = db.fetch_lead_by_id(owner, lead_id)
     if lead:
-        sync_lead_to_sheet(lead)
+        background_tasks.add_task(_after_webhook_lead, lead, body.source.strip())
 
     return JSONResponse(
         status_code=201,
@@ -83,4 +94,15 @@ async def capture_lead(request: Request, body: LeadCaptureBody) -> JSONResponse:
 @router.get("/leads/health")
 async def lead_webhook_health() -> dict[str, Any]:
     configured = bool(os.getenv("LEAD_WEBHOOK_SECRET", "").strip())
-    return {"status": "ok", "webhook_configured": configured}
+    notify = os.getenv("NOTIFY_OWNERS_ON_WEBHOOK", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    return {
+        "status": "ok",
+        "webhook_configured": configured,
+        "owner_notify_enabled": notify,
+        "registered_owners": len(get_owner_phones()),
+    }

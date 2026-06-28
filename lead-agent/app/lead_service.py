@@ -176,6 +176,28 @@ def add_lead_note(owner_phone: str, lead_id: int, note: str) -> dict:
     return _tool_result(success=True, data={"lead": updated})
 
 
+def add_lead_tags(owner_phone: str, lead_id: int, tags: str) -> dict:
+    lead, error = _require_lead(owner_phone, lead_id)
+    if error:
+        return error
+
+    tag_text = tags.strip()
+    if not tag_text:
+        return _tool_result(success=False, error="Tags cannot be empty.")
+
+    if not db.append_lead_tags(owner_phone, lead_id, tag_text):
+        return _tool_result(success=False, error=f"Failed to add tags to lead id={lead_id}.")
+
+    db.log_action(
+        owner_phone,
+        "tags_added",
+        f"Added tags to lead '{lead['name']}' (id={lead_id}): {tag_text}",
+    )
+    updated = db.fetch_lead_by_id(owner_phone, lead_id)
+    _sync_lead(owner_phone, lead_id)
+    return _tool_result(success=True, data={"lead": updated})
+
+
 def draft_followup_message(
     owner_phone: str,
     lead_id: int,
