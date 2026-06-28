@@ -450,4 +450,6 @@ Covers owner isolation, admin security, multi-owner pool, Sheets sync serializat
 
 ## License
 
-MIT
+**Proprietary — all rights reserved.** See [LICENSE](../LICENSE).
+
+Unauthorized copying, redistribution, or commercial use without written permission is prohibited.
