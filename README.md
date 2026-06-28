@@ -4,9 +4,10 @@
 
 [![CI](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml)
 
-Indian SMB owners manage sales leads over WhatsApp in plain English or Hindi — no app, no dashboard, no login. Text the bot like you'd text an employee; a real MCP tool server and Groq agent handle the rest safely.
+Indian SMB owners manage sales leads over WhatsApp in plain English or Hindi. Text the bot like you'd text an employee; a real MCP tool server and Groq agent handle the rest safely. A dark admin dashboard at `/admin` complements WhatsApp for leads, edits, Sheets sync, and export.
 
-**Live:** [lead-agent-to63.onrender.com/health](https://lead-agent-to63.onrender.com/health)  
+**Live:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health)  
+**Admin:** [lead-agent-to63.onrender.com/admin](https://lead-agent-to63.onrender.com/admin)  
 **Repo:** [github.com/ayushanand27/mcp-build](https://github.com/ayushanand27/mcp-build)
 
 ---
@@ -23,14 +24,17 @@ All application code, tests, migrations, and **full documentation** live in **`l
 
 **→ [Read the complete documentation](lead-agent/README.md)** (architecture, setup, deployment, API, security)
 
+**Client handover:** [docs/CLIENT_SETUP.md](lead-agent/docs/CLIENT_SETUP.md) · [docs/CLIENT_GUIDE.md](lead-agent/docs/CLIENT_GUIDE.md) · [docs/ZAPIER_INDIA_MART.md](lead-agent/docs/ZAPIER_INDIA_MART.md)
+
 ---
 
 ## Architecture
 
 ```
-WhatsApp  →  Render (FastAPI)  →  Groq agent  →  MCP tools (×9)  →  Supabase Postgres
-                ↑ webhook
-           Meta Cloud API
+WhatsApp / Webhook  →  Render (FastAPI)  →  Groq agent  →  MCP tools (×10)  →  Supabase Postgres
+        ↑                      │                                    │
+   Meta Cloud API         /admin dashboard                    Google Sheets
+   cron-job.org           lead webhook API                     (Apps Script)
 ```
 
 ---
@@ -58,21 +62,28 @@ uvicorn app.main:app --reload --port 8000
 | Messaging | Meta WhatsApp Cloud API |
 | Database | Supabase Postgres (persistent) |
 | Hosting | Render.com (free tier) |
+| Cron | [cron-job.org](https://cron-job.org) (free daily summary) |
 | CI | GitHub Actions |
 
 ---
 
-## Status
+## Status (live demo — June 2026)
 
-| Milestone | Status |
-|-----------|--------|
-| MCP read/write tools (9) | ✅ |
+| Feature | Status |
+|---------|--------|
+| MCP read/write tools (10) | ✅ |
 | Groq agent + confirmation flow | ✅ |
 | WhatsApp webhook + HMAC validation | ✅ |
-| Supabase Postgres (persistent storage) | ✅ |
+| Multi-owner shared lead pool | ✅ |
+| Admin dashboard (edit, tags, CSV, activity) | ✅ |
+| Google Sheets upsert sync | ✅ |
+| Lead capture webhook (`POST /api/leads`) | ✅ |
+| WhatsApp alert on new webhook lead | ✅ |
+| Daily summary cron (9 AM IST) | ✅ |
+| Supabase Postgres | ✅ |
 | Deployed on Render | ✅ |
-| GitHub Actions CI | ✅ |
-| Meta test sandbox (WhatsApp) | ✅ |
+| Meta test sandbox (up to 5 recipients) | ✅ |
+| GitHub Actions CI (12 tests) | ✅ |
 
 ---
 

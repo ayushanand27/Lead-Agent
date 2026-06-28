@@ -29,7 +29,7 @@ WhatsApp  →  Render (FastAPI)  →  Groq (agent)  →  Supabase Postgres (lead
 **Option A — SQL Editor (easiest)**
 
 1. Project → **SQL Editor** → **New query**
-2. Paste contents of `migrations/001_leads_schema.sql`
+2. Paste contents of `migrations/001_leads_schema.sql`, then run `002`, `003`, `004` in order
 3. Click **Run**
 
 **Option B — Supabase CLI**
@@ -89,6 +89,14 @@ In [Render Dashboard](https://dashboard.render.com) → your **lead-agent** serv
 | `WHATSAPP_PHONE_NUMBER_ID` | e.g. `1144225728778614` |
 | `WHATSAPP_VERIFY_TOKEN` | e.g. `leadagent_verify_2026` |
 | `WHATSAPP_APP_SECRET` | From Meta App → Settings → Basic |
+| `BUSINESS_NAME` | e.g. `Sharma Realty` |
+| `BUSINESS_OWNER_PHONES` | `917073245149` or comma-separated partners |
+| `ADMIN_DASHBOARD_PASSWORD` | Dashboard login password (or bcrypt hash) |
+| `ADMIN_SESSION_SECRET` | Random 32+ char string |
+| `LEAD_WEBHOOK_SECRET` | For `POST /api/leads` (Zapier/IndiaMART) |
+| `GOOGLE_SHEETS_WEBHOOK_URL` | Apps Script web app URL (optional) |
+| `NOTIFY_OWNERS_ON_WEBHOOK` | `true` — WhatsApp alert on new webhook lead |
+| `CRON_SECRET` | Daily summary cron secret |
 
 **Remove** `DATABASE_PATH` from Render (or leave unset) — production uses Postgres only.
 
@@ -128,7 +136,7 @@ Render free tier sleeps after ~15 min idle. Meta webhooks can fail during cold s
 
 ```bash
 curl https://lead-agent-to63.onrender.com/health
-# {"status":"ok","timestamp":...}
+# {"status":"ok","timestamp":...,"database":"connected","cron_configured":true}
 ```
 
 ---
@@ -145,7 +153,13 @@ curl https://lead-agent-to63.onrender.com/health
 | Verify token | Same page | Must match `WHATSAPP_VERIFY_TOKEN` on Render |
 | Subscribe | Same page | **messages** field = Subscribed ✓ |
 | Test number | WhatsApp → **API Setup** | Message **+1 555-195-9098** |
-| Recipients | API Setup | Your phone `917073245149` in recipient list |
+| Recipients | API Setup → **Manage phone number list** | Add **every** number in `BUSINESS_OWNER_PHONES` (OTP verify). Meta test mode allows up to **5 verified recipients**. The dropdown “To” field is only for Meta’s manual test tool — your app sends to **all** listed owners via API. |
+
+**Meta test sandbox rules (2026):**
+- Only numbers on the recipient allow-list receive outbound messages
+- Up to 5 verified numbers per test WABA
+- Meta’s “Send message” UI picks one recipient at a time — that does **not** limit your app
+- Production WABA removes the allow-list restriction (requires Business Verification + App Review)
 
 ### 3.2 Permanent token (System User)
 
@@ -205,7 +219,7 @@ uvicorn app.main:app --reload --port 8000
 
 ---
 
-## 5. Admin dashboard (free tier)
+## 5. Admin dashboard & daily cron
 
 After deploy, set these on **Render → Environment**:
 
@@ -214,18 +228,55 @@ After deploy, set these on **Render → Environment**:
 | `ADMIN_DASHBOARD_PASSWORD` | Strong password you share with the client |
 | `ADMIN_SESSION_SECRET` | Random 32+ char string |
 | `BUSINESS_NAME` | `Sharma Realty` |
-| `BUSINESS_OWNER_PHONES` | `917073245149` (your WhatsApp, digits only) |
+| `BUSINESS_OWNER_PHONES` | `917073245149,917004455149` (partners share leads) |
+| `CRON_SECRET` | e.g. `LeadAgentCron2026Secret` |
 
 Open: `https://lead-agent-to63.onrender.com/admin`
 
-Login with **owner phone** + **dashboard password**. UI is dark zinc (industry-standard admin look) — no paid UI library.
+Login with **owner phone** + **dashboard password**. Features: lead table, **Edit** (status/notes/tags), **Sync all to Google Sheets**, CSV export, activity log.
 
-**Daily summary (optional, free):** set `CRON_SECRET`, then on [cron-job.org](https://cron-job.org) create a daily job:
+Verify cron is configured:
+
+```bash
+curl https://lead-agent-to63.onrender.com/health
+# cron_configured must be true
+```
+
+### Daily summary on [cron-job.org](https://console.cron-job.org) (free)
+
+1. Render: set `CRON_SECRET` → **Save, rebuild, and deploy**
+2. Create cronjob:
+
+| Field | Value |
+|-------|--------|
+| Title | LeadAgent daily summary |
+| URL | `https://lead-agent-to63.onrender.com/internal/cron/daily-summary` |
+| Enable job | ON |
+| Save responses in job history | ON (first week) |
+| Schedule | Every day at **9:00** |
+| Timezone | **Asia/Kolkata** |
+| Notify on failure | ON |
+
+3. **Advanced** tab:
+
+| Setting | Value |
+|---------|--------|
+| HTTP authentication | OFF (leave username/password empty) |
+| Request method | **POST** |
+| Headers | `X-Cron-Secret` = your `CRON_SECRET` |
+| Timeout | 30 seconds |
+
+**Alternative (no Advanced):** GET URL with query param:
 
 ```
-POST https://lead-agent-to63.onrender.com/internal/cron/daily-summary
-Header: X-Cron-Secret: <your CRON_SECRET>
+https://lead-agent-to63.onrender.com/internal/cron/daily-summary?secret=YOUR_CRON_SECRET
 ```
+
+4. **Test run** → expect `200 OK` and `{"status":"ok","sent":N,"failed":0}`
+
+`sent` = owners who received summary; `failed` = owner phone not on Meta recipient list or WhatsApp API error.
+
+Full client handover (Sheets, webhook, bcrypt): **[docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md)**
 
 ---
 
@@ -267,4 +318,6 @@ Test number `+1 555…` is for development only. For real Indian SMB customers:
 | "No leads" after redeploy | Add `DATABASE_URL` on Render pointing to Supabase |
 | `connection refused` to DB | Restore Supabase project if paused; use pooler URL port 6543 |
 | Webhook 403 | `WHATSAPP_APP_SECRET` mismatch on Render |
-| OAuth error 190 | Regenerate System User token, update Render |
+| Cron 403 Forbidden | `CRON_SECRET` not on Render or typo | Save & redeploy; `/health` → `cron_configured: true` |
+| Cron `failed: 1` | Owner phone not in Meta recipient list | API Setup → Manage phone number list → verify OTP |
+| WhatsApp to second owner fails | Same as above | All `BUSINESS_OWNER_PHONES` must be verified recipients |

@@ -6,9 +6,9 @@
 
 LeadAgent lets a small business owner text a WhatsApp bot like they'd text an employee — *"which leads haven't I called in 2 days?"*, *"mark Ramesh as converted"*, *"send a follow-up to Priya"* — and get safe, auditable results. A **classic dark admin dashboard** (`/admin`) complements WhatsApp for leads, activity, and CSV export.
 
-Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent loop** that decides which tools to call, and a **FastAPI webhook** wired to Meta's WhatsApp Cloud API. Every write that matters asks for confirmation first. Every query is scoped to one owner's phone number.
+Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent loop** that decides which tools to call, and a **FastAPI webhook** wired to Meta's WhatsApp Cloud API. Every write that matters asks for confirmation first. Partners sharing one business see the same lead pool via `BUSINESS_OWNER_PHONES`.
 
-**Live demo:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health)
+**Live demo:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin)
 
 ---
 
@@ -30,37 +30,42 @@ Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent l
                                               │ calls
                                               ▼
                                      ┌──────────────────┐
-                                     │  MCP Tools (×9)  │
+                                     │  MCP Tools (×10) │
                                      │  read + write    │
                                      └────────┬─────────┘
                                               │
-                                              ▼
-                                     ┌──────────────────┐
-                                     │  Supabase        │
-                                     │  Postgres        │
-                                     │  (leads,         │
-                                     │   action_log)    │
-                                     └──────────────────┘
+                         ┌────────────────────┼────────────────────┐
+                         ▼                    ▼                    ▼
+                ┌──────────────────┐ ┌──────────────┐ ┌──────────────────┐
+                │  Supabase        │ │ Google Sheets│ │  Meta WhatsApp   │
+                │  Postgres        │ │ (Apps Script)│ │  (outbound msgs) │
+                └──────────────────┘ └──────────────┘ └──────────────────┘
 ```
 
 **Request flow:** WhatsApp message → HMAC-validated webhook → `handle_message()` → Groq selects MCP tools → Postgres read/write → confirmation gate for sends & terminal status changes → reply sent back on WhatsApp.
 
-**Production stack:** Render (app) + Supabase (persistent database) + Meta WhatsApp Cloud API + Groq.
+**Also:** `POST /api/leads` (Zapier/IndiaMART) → DB + optional Sheets sync + owner WhatsApp alert. Admin dashboard edits trigger Sheets upsert by lead `id`. Daily cron sends stale-lead summary to every owner phone.
+
+**Production stack:** Render (app) + Supabase (database) + Meta WhatsApp Cloud API + Groq + cron-job.org (scheduled summary).
 
 ---
 
 ## Features
 
 - **Plain English/Hindi commands** — owners interact entirely over WhatsApp
-- **Admin dashboard** — dark industry-standard UI at `/admin` (login with owner phone + password): stats, lead table, search/filter, CSV export, activity log, settings
-- **Business config** — per-deploy branding via `BUSINESS_NAME`, `BUSINESS_INDUSTRY`, `BUSINESS_OWNER_PHONES`
-- **Daily summary** — `POST /internal/cron/daily-summary` (cron secret) sends stale-lead counts on WhatsApp
-- **9 MCP tools** — 4 read (`list_leads`, `get_stale_leads`, `search_leads`, `get_lead_details`) + 5 write (`create_lead`, `update_lead_status`, `add_lead_note`, `draft_followup_message`, `send_whatsapp_message`)
+- **Admin dashboard** — dark UI at `/admin` (phone + password): stats, lead table, **Edit** (status/notes/tags), search/filter, **Sync all to Google Sheets**, CSV export, activity log, settings
+- **Multi-owner** — comma-separated `BUSINESS_OWNER_PHONES` share one lead pool (partners see the same leads)
+- **Lead tags** — via WhatsApp, dashboard edit, or webhook payload
+- **Google Sheets backup** — upsert by lead `id` (no duplicate rows on re-sync); Apps Script webhook
+- **Lead capture webhook** — `POST /api/leads` for website forms, Zapier, IndiaMART (`X-Lead-Webhook-Secret`)
+- **Webhook WhatsApp alert** — `NOTIFY_OWNERS_ON_WEBHOOK=true` pings all owners on new lead
+- **Daily summary** — cron at 9 AM IST sends stale-lead counts to every owner (`GET` or `POST` + `CRON_SECRET`)
+- **10 MCP tools** — 4 read + 6 write (`add_lead_tags` included)
 - **Confirmation flow** — destructive actions (send message, mark `converted`/`lost`) require an explicit YES before execution
-- **Owner isolation** — every query filters by `owner_phone`; one business cannot see or touch another's data
+- **Owner isolation** — each deploy is scoped to registered owner phones; partners in the same business share data
 - **Full audit log** — every write recorded in `action_log` with human-readable details
 - **Persistent storage** — leads survive redeploys via Supabase Postgres (not ephemeral SQLite)
-- **Secure by design** — HMAC webhook validation, parameterized SQL only, RLS on database tables, no stack traces to users
+- **Secure by design** — HMAC webhook validation, bcrypt admin passwords, login rate limit, optional IP allowlist, security headers, parameterized SQL, RLS on database tables
 
 ---
 
@@ -154,10 +159,13 @@ Register in Cursor or Claude Desktop, or inspect with `mcp dev app/mcp_server.py
 | `DATABASE_PATH` | Local only | SQLite path when `DATABASE_URL` is unset (default: `leads.db`) |
 | `BUSINESS_NAME` | Optional | Display name in agent + dashboard (default: `LeadAgent`) |
 | `BUSINESS_INDUSTRY` | Optional | `general`, `real_estate`, `trading`, `coaching` — tweaks system prompt |
-| `BUSINESS_OWNER_PHONES` | Optional | Comma-separated owner numbers (digits only). Empty = any sender |
-| `ADMIN_DASHBOARD_PASSWORD` | Dashboard | Password for `/admin` login (with owner phone) |
+| `BUSINESS_OWNER_PHONES` | Optional | Comma-separated owner numbers (digits only). Shared lead pool for all listed partners |
+| `ADMIN_DASHBOARD_PASSWORD` | Dashboard | Password for `/admin` login (plain or bcrypt hash — see `scripts/hash_admin_password.py`) |
 | `ADMIN_SESSION_SECRET` | Dashboard | Random string for signed session cookies |
-| `CRON_SECRET` | Optional | Header `X-Cron-Secret` for daily summary endpoint |
+| `ADMIN_IP_ALLOWLIST` | Optional | Comma-separated IPs allowed to access `/admin` |
+| `LEAD_WEBHOOK_SECRET` | Webhook | Header `X-Lead-Webhook-Secret` for `POST /api/leads` |
+| `GOOGLE_SHEETS_WEBHOOK_URL` | Optional | Google Apps Script web app URL for Sheets upsert sync |
+| `CRON_SECRET` | Optional | Daily summary — header `X-Cron-Secret` or query `?secret=` |
 | `STALE_LEAD_DAYS` | Optional | Days without contact before "stale" (default: `2`) |
 | `NOTIFY_OWNERS_ON_WEBHOOK` | Optional | WhatsApp alert owners on `POST /api/leads` (default: `true`) |
 | `SENTRY_DSN` | Optional | Error monitoring (Sentry) |
@@ -190,8 +198,9 @@ DATABASE_PASSWORD=your-database-password
 |------|----------|------------|
 | 1 | **Supabase** | Create project → run `migrations/001_leads_schema.sql` → copy pooler connection string |
 | 2 | **Render** | Set env vars (`DATABASE_URL` + `DATABASE_PASSWORD`, Groq, WhatsApp) → deploy from `lead-agent/` root |
-| 3 | **Meta** | Webhook URL `https://<app>.onrender.com/webhook` → subscribe `messages` → System User token |
-| 4 | **UptimeRobot** (optional) | Ping `/health` every 5 min to avoid Render free-tier cold starts |
+| 3 | **Meta** | Webhook URL `https://<app>.onrender.com/webhook` → subscribe `messages` → add **all owner phones** to test recipient list (up to 5) → System User token |
+| 4 | **cron-job.org** | Daily 9 AM IST summary — see [DEPLOY.md §5](DEPLOY.md#5-admin-dashboard--daily-cron) |
+| 5 | **UptimeRobot** (optional) | Ping `/health` every 5 min to reduce Render free-tier cold starts |
 
 ### Render settings
 
@@ -206,10 +215,13 @@ DATABASE_PASSWORD=your-database-password
 
 ```bash
 curl https://lead-agent-to63.onrender.com/health
-# {"status":"ok","timestamp":...,"database":"connected"}
+# {"status":"ok","timestamp":...,"database":"connected","cron_configured":true}
 
 curl https://lead-agent-to63.onrender.com/health/ready
 # {"status":"ready","database":"connected"}
+
+curl https://lead-agent-to63.onrender.com/api/leads/health
+# {"webhook_configured":true,...}
 ```
 
 WhatsApp test: message the Meta test number → `Add lead Ramesh phone 9876543210 from Surat` → check row in Supabase **Table Editor** → `leads`.
@@ -228,16 +240,20 @@ https://lead-agent-to63.onrender.com/health
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/health` | GET | **Liveness** — always 200 when process is up; includes `database` status |
+| `/health` | GET | **Liveness** — includes `database` and `cron_configured` |
 | `/health/ready` | GET | **Readiness** — 503 if database unreachable |
 | `/webhook` | GET | Meta webhook verification challenge |
 | `/webhook` | POST | Inbound WhatsApp messages (HMAC-validated; acks immediately, processes in background) |
+| `/api/leads` | POST | Lead capture from website/Zapier/IndiaMART (`X-Lead-Webhook-Secret`) |
+| `/api/leads/health` | GET | Webhook integration status |
 | `/admin` | GET | Owner dashboard (session login) |
 | `/admin/login` | GET/POST | Dashboard login (phone + `ADMIN_DASHBOARD_PASSWORD`) |
 | `/admin/leads` | GET | Lead list, search, filter |
+| `/admin/leads/{id}/edit` | GET/POST | Edit status, notes, tags (+ Sheets sync) |
+| `/admin/leads/sync-sheets` | POST | Backfill all leads to Google Sheets |
 | `/admin/leads/export` | GET | CSV download |
 | `/admin/activity` | GET | Audit log |
-| `/internal/cron/daily-summary` | POST | Cron-triggered WhatsApp summary (`X-Cron-Secret`) |
+| `/internal/cron/daily-summary` | GET, POST | Cron-triggered WhatsApp summary (`X-Cron-Secret` or `?secret=`) |
 
 Set `LOG_LEVEL=DEBUG` for verbose server logs.
 
@@ -282,10 +298,12 @@ pytest tests/ -v
 | Pinned Python runtime | `runtime.txt` → 3.11.11 |
 
 **Known v1 limitations (acceptable for portfolio / test sandbox):**
-- Meta **test number** only (not production WABA)
+- Meta **test number** only — messages deliver to **verified recipient list** (max 5 numbers); not production WABA
 - No Redis / job queue (single Render instance)
-- No external error monitoring (Sentry, etc.)
-- Daily summary cron must be wired manually (e.g. [cron-job.org](https://cron-job.org) free tier)
+- Sentry optional — not required for demo
+- Render free tier cold starts (~15–30s wake) unless UptimeRobot ping or Starter plan
+
+**Verified live (June 2026):** multi-owner cron summary, dashboard edit + Sheets upsert, webhook alerts, cron-job.org daily job at 9 AM IST.
 
 ---
 
@@ -298,6 +316,7 @@ pytest tests/ -v
 | `mark Ramesh as converted` | Queues status update → asks YES → updates on confirm |
 | `send a follow up to Priya` | Drafts message → shows preview → sends only after YES |
 | `add note to Amit: called twice, no answer` | Appends timestamped note to Amit's lead |
+| `tag Priya as hot and referral` | Adds comma-separated tags via `add_lead_tags` |
 
 Hindi works too — the agent replies in the same language the owner uses.
 
@@ -314,7 +333,8 @@ Hindi works too — the agent replies in the same language the owner uses.
 | **Database RLS** | Row Level Security enabled on Supabase tables; no public API policies |
 | **Safe errors** | Generic messages to owners; details logged server-side only |
 | **SQL injection** | Parameterized queries only — no string-interpolated SQL |
-| **Rate limiting** | 30 requests/minute per IP on `POST /webhook` |
+| **Rate limiting** | 30 requests/minute per IP on `POST /webhook`; admin login rate limit |
+| **Admin hardening** | bcrypt passwords, optional IP allowlist, security headers, login audit |
 
 Run isolation tests anytime:
 
@@ -329,40 +349,44 @@ pytest tests/test_owner_isolation.py -v
 ```
 lead-agent/
 ├── app/
-│   ├── main.py            # FastAPI webhook + health routes
-│   ├── logging_config.py  # LOG_LEVEL configuration
+│   ├── main.py            # FastAPI webhook, health, cron routes
+│   ├── api/leads.py       # POST /api/leads webhook
 │   ├── agent.py           # Groq agent loop + confirmation flow
-│   ├── mcp_server.py      # MCP server (9 tools)
+│   ├── mcp_server.py      # MCP server (10 tools)
 │   ├── lead_service.py    # Business logic layer
 │   ├── db.py              # Postgres (Supabase) + SQLite queries
 │   ├── models.py          # Pydantic models + tool schemas
 │   ├── pending_actions.py # DB-backed confirmation store
-│   ├── config.py          # Business name, industry, owner phones
+│   ├── config.py          # Business name, industry, multi-owner scope
 │   ├── summary.py         # Daily WhatsApp summary
+│   ├── notifications.py   # Owner alerts on webhook leads
+│   ├── integrations/sheets.py  # Google Sheets upsert sync
 │   ├── admin/             # Dashboard routes + session auth
+│   ├── security/          # bcrypt, rate limit, headers
 │   ├── static/admin.css   # Dark dashboard theme
-│   ├── templates/admin/   # Jinja2 HTML pages
+│   ├── templates/admin/   # Jinja2 HTML (leads, lead_edit, …)
 │   └── whatsapp.py        # Meta Cloud API helpers
+├── docs/
+│   ├── CLIENT_SETUP.md    # $1000 tier handover (Sheets, cron, webhook)
+│   ├── CLIENT_GUIDE.md    # WhatsApp command cheat sheet
+│   └── ZAPIER_INDIA_MART.md
 ├── scripts/
 │   ├── test_read_tools.py
 │   ├── test_write_tools.py
 │   ├── test_agent.py
 │   ├── test_webhook.py
+│   ├── hash_admin_password.py
 │   └── check_meta_webhook.py
-├── tests/
-│   └── test_owner_isolation.py
+├── tests/                 # pytest (isolation, security, sheets, multi-owner)
 ├── migrations/
 │   ├── 001_leads_schema.sql
-│   └── 002_pending_actions.sql
-├── DEPLOY.md              # Full Meta + Supabase + Render guide
+│   ├── 002_pending_actions.sql
+│   ├── 003_lead_consent.sql
+│   └── 004_lead_tags.sql
+├── DEPLOY.md              # Meta + Supabase + Render + cron guide
 ├── runtime.txt            # Python 3.11 for Render
 ├── requirements.txt
 └── .env.example
-
-../                          # repo root (mcp-build)
-├── README.md                # Landing page — links here for full docs
-├── render.yaml              # Render IaC
-└── .github/workflows/ci.yml
 ```
 
 ---
@@ -377,6 +401,10 @@ lead-agent/
 | No WhatsApp reply | Webhook not subscribed | Meta → WhatsApp → Configuration → subscribe `messages` |
 | Leads gone after redeploy | SQLite on Render (old setup) | Set `DATABASE_URL` to Supabase |
 | OAuth error 190 | Expired WhatsApp token | Regenerate System User token on Meta |
+| Cron returns 403 | `CRON_SECRET` missing or mismatch | Set on Render → Save & redeploy; check `/health` → `cron_configured: true` |
+| Cron `failed: 1` | Second owner not in Meta recipient list | Meta → API Setup → Manage phone number list → verify all `BUSINESS_OWNER_PHONES` |
+| Sheets duplicate rows | Old rows before upsert script | Delete duplicates manually; header must be `tags` not `tag`; redeploy Apps Script |
+| Edit button missing | Old Render deploy | Manual Deploy → hard refresh `/admin/leads` |
 
 ---
 
@@ -390,7 +418,11 @@ All local test suites passing:
 | Write tools | `python scripts/test_write_tools.py` | Pass |
 | Agent loop | `python scripts/test_agent.py` | Pass |
 | Webhook | `python scripts/test_webhook.py` | Pass |
-| Owner isolation | `pytest tests/ -v` | 3/3 pass |
+| Owner isolation | `pytest tests/test_owner_isolation.py -v` | 3 pass |
+| Security + webhook | `pytest tests/test_security.py -v` | 5 pass |
+| Multi-owner + tags | `pytest tests/test_multi_owner.py -v` | 2 pass |
+| Sheets sync | `pytest tests/test_sheets_sync.py -v` | 2 pass |
+| **Total pytest** | `pytest tests/ -v` | **12 pass** |
 
 ---
 
