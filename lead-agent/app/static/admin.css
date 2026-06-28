@@ -201,6 +201,52 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--border); ou
 
 .alert-error { background: rgba(239, 68, 68, 0.1); border-color: #7f1d1d; color: #fecaca; }
 
+/* Edit lead page */
+.edit-lead-page {
+  max-width: 640px;
+}
+
+.edit-lead-header {
+  margin-bottom: 1.25rem;
+}
+
+.edit-lead-name {
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.25rem;
+}
+
+.edit-lead-meta {
+  font-size: 0.9375rem;
+}
+
+.edit-lead-card {
+  padding: 1.5rem;
+}
+
+.edit-lead-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.edit-lead-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+}
+
 @media (max-width: 768px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
