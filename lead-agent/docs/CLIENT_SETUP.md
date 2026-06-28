@@ -141,11 +141,43 @@ Check: `GET /api/leads/health` → `webhook_configured: true`
 
 ## 5. Daily summary cron (free)
 
-1. Render: `CRON_SECRET=your-random-secret`
-2. [cron-job.org](https://cron-job.org) → free account
-3. Job: `POST https://YOUR-APP.onrender.com/internal/cron/daily-summary`
-4. Header: `X-Cron-Secret: your-random-secret`
-5. Schedule: daily 9:00 AM IST
+1. Render: `CRON_SECRET=your-random-secret` → **Save & redeploy**
+2. [cron-job.org](https://console.cron-job.org) → free account → **Create cronjob**
+
+### Easy way (GET — no Advanced tab needed)
+
+| Field | Value |
+|-------|--------|
+| Title | LeadAgent daily summary |
+| URL | `https://lead-agent-to63.onrender.com/internal/cron/daily-summary?secret=YOUR_CRON_SECRET` |
+| Enable job | ON |
+| Schedule | Every day at **9:00** (set timezone to **Asia/Kolkata** in job settings if available) |
+
+Replace `YOUR_CRON_SECRET` with the exact value from Render `CRON_SECRET`.
+
+### Advanced way (POST + header)
+
+After creating the job, open it → **ADVANCED** tab (not on the first screen):
+
+| Setting | Value |
+|---------|--------|
+| Request method | **POST** |
+| Headers | `X-Cron-Secret` = your `CRON_SECRET` |
+| URL | `https://lead-agent-to63.onrender.com/internal/cron/daily-summary` (no `?secret`) |
+
+### cron-job.org toggles (recommended)
+
+| Toggle | Setting |
+|--------|---------|
+| Enable job | **ON** |
+| Save responses in job history | **ON** (first week, for debugging) |
+| Notify when execution fails | **ON** |
+| Notify on success after failure | ON (optional) |
+| Notify when disabled (too many failures) | **ON** |
+| TLS cert expiry notify | OFF (optional) |
+| Schedule expires | OFF |
+
+Click **Test run** / **Run now** → should return `{"status":"ok",...}` and you get a WhatsApp summary if stale leads exist.
 
 ---
 

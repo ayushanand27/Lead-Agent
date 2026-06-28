@@ -151,11 +151,13 @@ def health_ready() -> Response:
     return JSONResponse(content={"status": "ready", "database": "connected"})
 
 
-@app.post("/internal/cron/daily-summary")
+@app.api_route("/internal/cron/daily-summary", methods=["GET", "POST"])
 async def cron_daily_summary(request: Request) -> JSONResponse:
-    """Trigger morning lead summaries (protect with CRON_SECRET header)."""
+    """Trigger morning lead summaries (CRON_SECRET via header or ?secret= for GET cron jobs)."""
     secret = os.getenv("CRON_SECRET", "")
     provided = request.headers.get("X-Cron-Secret", "")
+    if not provided and request.method == "GET":
+        provided = request.query_params.get("secret", "")
     if not secret or not secrets.compare_digest(provided, secret):
         return JSONResponse(status_code=403, content={"error": "Forbidden"})
     result = await send_daily_summaries()
