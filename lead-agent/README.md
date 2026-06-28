@@ -12,11 +12,11 @@ LeadAgent fixes that. Your sales team texts a WhatsApp bot in **plain Hindi or E
 
 ## Screenshots
 
-| Dashboard | Leads + Edit | WhatsApp |
-|:---:|:---:|:---:|
-| ![Dashboard](../docs/screenshots/admin-dashboard.png) | ![Leads](../docs/screenshots/admin-leads.png) | ![WhatsApp](../docs/screenshots/whatsapp-flow.png) |
+| Dashboard | Leads + Edit | WhatsApp | Live deployment |
+|:---:|:---:|:---:|:---:|
+| ![Dashboard](../docs/screenshots/admin-dashboard.png) | ![Leads](../docs/screenshots/admin-leads.png) | ![WhatsApp](../docs/screenshots/whatsapp-flow.png) | [![Health](../docs/screenshots/health-check.png)](https://lead-agent-to63.onrender.com/health) |
 
-**Live:** [health check](https://lead-agent-to63.onrender.com/health) · [admin](https://lead-agent-to63.onrender.com/admin)
+**Links:** [health](https://lead-agent-to63.onrender.com/health) · [admin](https://lead-agent-to63.onrender.com/admin)
 
 ---
 

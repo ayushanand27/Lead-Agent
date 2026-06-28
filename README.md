@@ -19,11 +19,13 @@ Indian real estate teams, coaching centers, and SMBs get most leads on WhatsApp.
 
 ## See it working
 
-| Dashboard | Leads + Edit | WhatsApp bot |
-|:---:|:---:|:---:|
-| ![Dashboard](docs/screenshots/admin-dashboard.png) | ![Leads table](docs/screenshots/admin-leads.png) | ![WhatsApp flow](docs/screenshots/whatsapp-flow.png) |
+| Dashboard | Leads + Edit | WhatsApp bot | Live deployment |
+|:---:|:---:|:---:|:---:|
+| ![Dashboard](docs/screenshots/admin-dashboard.png) | ![Leads table](docs/screenshots/admin-leads.png) | ![WhatsApp flow](docs/screenshots/whatsapp-flow.png) | [![Health check](docs/screenshots/health-check.png)](https://lead-agent-to63.onrender.com/health) |
 
-**Live health check:** [lead-agent-to63.onrender.com/health](https://lead-agent-to63.onrender.com/health) — should show `"database":"connected"` and `"cron_configured":true`
+**Health endpoint:** [lead-agent-to63.onrender.com/health](https://lead-agent-to63.onrender.com/health) — `database: connected`, `cron_configured: true`
+
+---
 
 ## Example: real estate team (Surat)
 
