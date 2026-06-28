@@ -120,6 +120,12 @@ async def _process_incoming_message(owner_phone: str, message_text: str) -> None
         logger.exception("Error handling webhook message from %s", owner_phone)
 
 
+@app.head("/health")
+def health_head() -> Response:
+    """UptimeRobot and other monitors often use HEAD."""
+    return Response(status_code=200)
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     """Liveness probe — always 200 when the process is up (UptimeRobot / Render)."""

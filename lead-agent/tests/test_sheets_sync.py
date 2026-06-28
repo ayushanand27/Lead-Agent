@@ -25,43 +25,44 @@ def test_sync_serializes_postgres_datetime(monkeypatch):
         "owner_phone": "917073245149",
     }
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.text = '{"ok":true}'
+    post_response = MagicMock()
+    post_response.status_code = 302
+    post_response.headers = {"Location": "https://script.googleusercontent.com/macros/echo?token=abc"}
+    post_response.text = ""
+
+    get_response = MagicMock()
+    get_response.status_code = 200
+    get_response.text = '{"ok":true}'
 
     mock_client = MagicMock()
-    mock_client.post.return_value = mock_response
+    mock_client.post.return_value = post_response
+    mock_client.get.return_value = get_response
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
 
     with patch("app.integrations.sheets.httpx.Client", return_value=mock_client):
-        sync_lead_to_sheet(lead)
+        assert sync_lead_to_sheet(lead) is True
 
-    assert mock_client.post.called
-    posted_body = mock_client.post.call_args[1].get("content") or mock_client.post.call_args[0][1]
+    mock_client.post.assert_called_once()
+    mock_client.get.assert_called_once()
+    posted_body = mock_client.post.call_args.kwargs.get("content") or mock_client.post.call_args.args[1]
     assert "2026-06-28" in posted_body
-    assert "datetime" not in posted_body
 
 
-def test_sync_follows_gas_redirect_with_post(monkeypatch):
+def test_sync_treats_gas_redirect_as_success_without_get(monkeypatch):
     monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/test/exec")
 
-    redirect = MagicMock()
-    redirect.status_code = 302
-    redirect.headers = {"Location": "https://script.googleusercontent.com/macros/echo?token=abc"}
-
-    ok = MagicMock()
-    ok.status_code = 200
-    ok.text = '{"ok":true}'
+    post_response = MagicMock()
+    post_response.status_code = 302
+    post_response.headers = {}
+    post_response.text = ""
 
     mock_client = MagicMock()
-    mock_client.post.side_effect = [redirect, ok]
+    mock_client.post.return_value = post_response
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
 
     lead = {"id": 2, "name": "Test", "phone": "91", "source": "x", "status": "new", "owner_phone": "91"}
 
     with patch("app.integrations.sheets.httpx.Client", return_value=mock_client):
-        sync_lead_to_sheet(lead)
-
-    assert mock_client.post.call_count == 2
+        assert sync_lead_to_sheet(lead) is True

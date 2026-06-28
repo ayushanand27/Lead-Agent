@@ -21,6 +21,7 @@ from app.admin.auth import (
     require_owner,
 )
 from app.config import get_owner_phones
+from app.integrations.sheets import is_sheets_sync_enabled, sync_all_leads_to_sheet
 from app.models import LEAD_STATUS_VALUES
 from app.security.audit import log_admin_event
 from app.security.ip_allowlist import is_ip_allowed
@@ -166,8 +167,31 @@ async def leads_page(
         query=q,
         status_filter=status,
         statuses=STATUSES,
+        sheets_sync_enabled=is_sheets_sync_enabled(),
+        sync_message=request.query_params.get("sync"),
     )
     return templates.TemplateResponse(request, "admin/leads.html", ctx)
+
+
+@router.post("/leads/sync-sheets", response_model=None)
+async def sync_leads_to_sheets(request: Request):
+    if not get_session_owner(request):
+        return _redirect_login()
+    owner = require_owner(request)
+    if not is_sheets_sync_enabled():
+        return RedirectResponse(url="/admin/leads?sync=not_configured", status_code=303)
+
+    leads = db.fetch_leads_for_owner(owner)
+    ok, failed = sync_all_leads_to_sheet(leads)
+    log_admin_event(
+        owner,
+        "sheets_backfill",
+        f"Synced {ok} leads to Google Sheets ({failed} failed)",
+    )
+    return RedirectResponse(
+        url=f"/admin/leads?sync=ok&count={ok}&failed={failed}",
+        status_code=303,
+    )
 
 
 @router.get("/leads/export", response_model=None)
