@@ -8,6 +8,7 @@ import httpx
 from groq import Groq
 
 from app import db
+from app.integrations.sheets import sync_lead_to_sheet
 from app.models import LEAD_STATUS_VALUES, LeadStatus
 
 GROQ_MODEL = "openai/gpt-oss-120b"
@@ -41,6 +42,12 @@ def _require_lead(owner_phone: str, lead_id: int) -> tuple[dict | None, dict | N
 
 def _format_note_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _sync_lead(owner_phone: str, lead_id: int) -> None:
+    lead = db.fetch_lead_by_id(owner_phone, lead_id)
+    if lead:
+        sync_lead_to_sheet(lead)
 
 
 def _normalize_whatsapp_recipient(phone: str) -> str:
@@ -110,6 +117,7 @@ def create_lead(
         f"Created lead '{name.strip()}' (id={lead_id}) from {source.strip()}",
     )
     lead = db.fetch_lead_by_id(owner_phone, lead_id)
+    _sync_lead(owner_phone, lead_id)
     return _tool_result(success=True, data={"lead": lead, "lead_id": lead_id})
 
 
@@ -135,6 +143,7 @@ def update_lead_status(owner_phone: str, lead_id: int, new_status: str) -> dict:
         f"Lead '{lead['name']}' (id={lead_id}) status: {old_status} → {new_status}",
     )
     updated = db.fetch_lead_by_id(owner_phone, lead_id)
+    _sync_lead(owner_phone, lead_id)
     return _tool_result(
         success=True,
         data={"lead": updated, "old_status": old_status, "new_status": new_status},
@@ -163,6 +172,7 @@ def add_lead_note(owner_phone: str, lead_id: int, note: str) -> dict:
         f"Added note to lead '{lead['name']}' (id={lead_id}): {note_text}",
     )
     updated = db.fetch_lead_by_id(owner_phone, lead_id)
+    _sync_lead(owner_phone, lead_id)
     return _tool_result(success=True, data={"lead": updated})
 
 
@@ -312,6 +322,7 @@ def send_whatsapp_message(
         f"Sent WhatsApp to '{lead['name']}' ({lead['phone']}, id={lead_id}): {text[:120]}",
     )
     updated = db.fetch_lead_by_id(owner_phone, lead_id)
+    _sync_lead(owner_phone, lead_id)
     return _tool_result(
         success=True,
         data={

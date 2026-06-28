@@ -19,3 +19,7 @@ def isolated_test_env(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_SESSION_SECRET", "test-session-secret")
     monkeypatch.setenv("ADMIN_DASHBOARD_PASSWORD", "test-admin-password")
     monkeypatch.setenv("BUSINESS_OWNER_PHONES", "919111111111")
+
+    from app import db
+
+    db.init_db()

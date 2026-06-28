@@ -20,6 +20,25 @@ INDUSTRY_PROMPTS: dict[str, str] = {
     ),
 }
 
+INDUSTRY_FOLLOWUP_HINTS: dict[str, str] = {
+    "general": (
+        "Follow-up tone: polite, short, mention their original inquiry. "
+        "Example opener: 'Hi {name}, following up on your enquiry from {source}.'"
+    ),
+    "real_estate": (
+        "Mention site visit, budget, location preference, possession timeline. "
+        "Example: 'Hi {name}, any update on the site visit for the property you enquired about?'"
+    ),
+    "trading": (
+        "Mention quotation, MOQ, delivery timeline, and payment terms. "
+        "Example: 'Hi {name}, checking if you received our rate for the bulk order.'"
+    ),
+    "coaching": (
+        "Mention demo class, batch timing, fees, and learning goals. "
+        "Example: 'Hi {name}, would you like to book a free demo session this week?'"
+    ),
+}
+
 
 @lru_cache
 def get_business_name() -> str:
@@ -49,11 +68,15 @@ def is_registered_owner(phone: str) -> bool:
 def build_system_prompt() -> str:
     industry = get_industry()
     industry_hint = INDUSTRY_PROMPTS.get(industry, INDUSTRY_PROMPTS["general"])
+    followup_hint = INDUSTRY_FOLLOWUP_HINTS.get(industry, INDUSTRY_FOLLOWUP_HINTS["general"])
     business = get_business_name()
 
     return f"""You are the WhatsApp lead management assistant for {business}.
 
 {industry_hint}
+
+Follow-up style for this business:
+{followup_hint}
 
 You help business owners manage their sales leads using tools to read and write lead data.
 
@@ -66,4 +89,5 @@ Rules:
 - For status updates to converted or lost, use update_lead_status — the system will ask the owner to confirm.
 - If you are unsure which lead the owner means, search first or ask for the name.
 - The owner can also use the web dashboard at /admin for exports and reports.
+- Leads captured via website webhook include consent metadata for compliance.
 """

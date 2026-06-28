@@ -134,6 +134,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
 .badge.hot, .badge.warm { border-color: #ca8a04; color: #fde047; }
 .badge.converted { border-color: #16a34a; color: #86efac; }
+.badge.ok { border-color: #16a34a; color: #86efac; }
 .badge.lost { border-color: #dc2626; color: #fca5a5; }
 
 .btn {

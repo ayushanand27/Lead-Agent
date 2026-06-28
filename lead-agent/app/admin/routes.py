@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import io
 import os
-from typing import Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -16,12 +15,21 @@ from app.admin.auth import (
     dashboard_context,
     get_admin_password,
     get_session_owner,
+    is_production,
     login_owner,
     logout_owner,
     require_owner,
 )
-from app.config import get_business_name, get_industry, get_owner_phones
+from app.config import get_owner_phones
 from app.models import LEAD_STATUS_VALUES
+from app.security.audit import log_admin_event
+from app.security.ip_allowlist import is_ip_allowed
+from app.security.rate_limit import (
+    clear_login_failures,
+    is_login_blocked,
+    record_login_failure,
+)
+from app.security.request_info import get_client_ip
 
 router = APIRouter(tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -34,8 +42,30 @@ def _redirect_login() -> RedirectResponse:
     return RedirectResponse(url="/admin/login", status_code=303)
 
 
+def _login_error(request: Request, message: str, status_code: int = 401):
+    return templates.TemplateResponse(
+        request,
+        "admin/login.html",
+        {"error": message},
+        status_code=status_code,
+    )
+
+
+def _guard_admin_ip(request: Request) -> RedirectResponse | None:
+    if not is_ip_allowed(get_client_ip(request)):
+        return _login_error(
+            request,
+            "Dashboard access is not allowed from this network.",
+            status_code=403,
+        )
+    return None
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> HTMLResponse:
+    blocked = _guard_admin_ip(request)
+    if blocked:
+        return blocked
     if get_session_owner(request):
         return RedirectResponse(url="/admin/", status_code=303)
     if not get_admin_password():
@@ -53,18 +83,44 @@ async def login_submit(
     owner_phone: str = Form(...),
     password: str = Form(...),
 ):
-    if not login_owner(request, owner_phone, password):
-        return templates.TemplateResponse(
-            request,
-            "admin/login.html",
-            {"error": "Invalid phone or password."},
-            status_code=401,
+    client_ip = get_client_ip(request)
+    blocked = _guard_admin_ip(request)
+    if blocked:
+        return blocked
+
+    normalized = owner_phone.strip().lstrip("+")
+
+    if is_login_blocked(client_ip):
+        log_admin_event(
+            normalized or "unknown",
+            "admin_login_blocked",
+            f"Rate limit exceeded from {client_ip}",
         )
+        return _login_error(
+            request,
+            "Too many failed attempts. Try again in 15 minutes.",
+            status_code=429,
+        )
+
+    if not login_owner(request, owner_phone, password):
+        record_login_failure(client_ip)
+        log_admin_event(
+            normalized or "unknown",
+            "admin_login_failed",
+            f"Invalid credentials from {client_ip}",
+        )
+        return _login_error(request, "Invalid phone or password.")
+
+    clear_login_failures(client_ip)
+    log_admin_event(normalized, "admin_login_success", f"Signed in from {client_ip}")
     return RedirectResponse(url="/admin/", status_code=303)
 
 
 @router.post("/logout")
 async def logout(request: Request) -> RedirectResponse:
+    owner = get_session_owner(request)
+    if owner:
+        log_admin_event(owner, "admin_logout", f"Signed out from {get_client_ip(request)}")
     logout_owner(request)
     return _redirect_login()
 
@@ -134,6 +190,8 @@ async def export_leads(request: Request, q: str | None = None):
             "source",
             "status",
             "notes",
+            "consent_source",
+            "consent_at",
             "last_contacted_at",
             "created_at",
         ],
@@ -173,5 +231,8 @@ async def settings_page(request: Request) -> HTMLResponse:
         request,
         active_page="settings",
         owner_phones_display=", ".join(phones) if phones else "(any WhatsApp number)",
+        sheets_sync_enabled=bool(os.getenv("GOOGLE_SHEETS_WEBHOOK_URL", "").strip()),
+        lead_webhook_enabled=bool(os.getenv("LEAD_WEBHOOK_SECRET", "").strip()),
+        production_mode=is_production(),
     )
     return templates.TemplateResponse(request, "admin/settings.html", ctx)

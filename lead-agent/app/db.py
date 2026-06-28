@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS leads (
     status TEXT NOT NULL,
     notes TEXT,
     last_contacted_at TIMESTAMPTZ,
+    consent_source TEXT,
+    consent_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_leads_owner_phone ON leads (owner_phone);
@@ -60,6 +62,8 @@ CREATE TABLE IF NOT EXISTS leads (
     status TEXT NOT NULL,
     notes TEXT,
     last_contacted_at TEXT,
+    consent_source TEXT,
+    consent_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_leads_owner_phone ON leads(owner_phone);
@@ -158,8 +162,33 @@ def init_db() -> None:
                 stmt = statement.strip()
                 if stmt:
                     conn.execute(stmt)
+            _apply_schema_migrations(conn)
         else:
             conn.executescript(script)
+            _apply_schema_migrations(conn)
+
+
+def _apply_schema_migrations(conn: Any) -> None:
+    """Add columns safely on existing databases."""
+    if _use_postgres():
+        conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS consent_source TEXT")
+        conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS consent_at TIMESTAMPTZ")
+        return
+
+    columns = {
+        row[1] if not isinstance(row, dict) else row["name"]
+        for row in conn.execute("PRAGMA table_info(leads)").fetchall()
+    }
+    if "consent_source" not in columns:
+        conn.execute("ALTER TABLE leads ADD COLUMN consent_source TEXT")
+    if "consent_at" not in columns:
+        conn.execute("ALTER TABLE leads ADD COLUMN consent_at TEXT")
+
+
+_LEAD_COLUMNS = (
+    "id, owner_phone, name, phone, source, status, notes, "
+    "last_contacted_at, consent_source, consent_at, created_at"
+)
 
 
 def check_connection() -> bool:
@@ -252,9 +281,8 @@ def fetch_leads_for_owner(
     owner_phone: str,
     status_filter: Optional[str] = None,
 ) -> list[dict]:
-    query = """
-        SELECT id, owner_phone, name, phone, source, status, notes,
-               last_contacted_at, created_at
+    query = f"""
+        SELECT {_LEAD_COLUMNS}
         FROM leads
         WHERE owner_phone = %s
     """
@@ -274,9 +302,8 @@ def fetch_leads_for_owner(
 def fetch_stale_leads(owner_phone: str, days_since_contact: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days_since_contact)).isoformat()
     query = _q(
-        """
-        SELECT id, owner_phone, name, phone, source, status, notes,
-               last_contacted_at, created_at
+        f"""
+        SELECT {_LEAD_COLUMNS}
         FROM leads
         WHERE owner_phone = %s
           AND status NOT IN ('converted', 'lost')
@@ -301,8 +328,7 @@ def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
 
     query = _q(
         f"""
-        SELECT id, owner_phone, name, phone, source, status, notes,
-               last_contacted_at, created_at
+        SELECT {_LEAD_COLUMNS}
         FROM leads
         WHERE owner_phone = %s
           AND (
@@ -322,9 +348,8 @@ def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
 
 def fetch_lead_by_id(owner_phone: str, lead_id: int) -> Optional[dict]:
     query = _q(
-        """
-        SELECT id, owner_phone, name, phone, source, status, notes,
-               last_contacted_at, created_at
+        f"""
+        SELECT {_LEAD_COLUMNS}
         FROM leads
         WHERE id = %s AND owner_phone = %s
         """
@@ -341,8 +366,10 @@ def insert_lead(
     source: str,
     notes: Optional[str] = None,
     status: str = "new",
+    consent_source: Optional[str] = None,
 ) -> int:
     now = datetime.now(timezone.utc).isoformat()
+    consent_at = now if consent_source else None
     with get_connection() as conn:
         if _use_postgres():
             row = conn.execute(
@@ -350,13 +377,13 @@ def insert_lead(
                     """
                     INSERT INTO leads (
                         owner_phone, name, phone, source, status, notes,
-                        last_contacted_at, created_at
+                        last_contacted_at, consent_source, consent_at, created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, NULL, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
                     RETURNING id
                     """
                 ),
-                (owner_phone, name, phone, source, status, notes, now),
+                (owner_phone, name, phone, source, status, notes, consent_source, consent_at, now),
             ).fetchone()
             return int(row["id"])
 
@@ -365,12 +392,12 @@ def insert_lead(
                 """
                 INSERT INTO leads (
                     owner_phone, name, phone, source, status, notes,
-                    last_contacted_at, created_at
+                    last_contacted_at, consent_source, consent_at, created_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, NULL, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
                 """
             ),
-            (owner_phone, name, phone, source, status, notes, now),
+            (owner_phone, name, phone, source, status, notes, consent_source, consent_at, now),
         )
         return int(cursor.lastrowid)
 

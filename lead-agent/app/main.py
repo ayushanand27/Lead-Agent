@@ -22,10 +22,12 @@ from slowapi.util import get_remote_address
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import db
-from app.admin.auth import get_session_secret
+from app.admin.auth import get_session_secret, is_production
 from app.admin.routes import router as admin_router
 from app.agent import handle_message
+from app.api.leads import router as api_leads_router
 from app.logging_config import configure_logging
+from app.security.headers import SecurityHeadersMiddleware
 from app.summary import send_daily_summaries
 from app.whatsapp import send_whatsapp_reply, verify_webhook
 
@@ -38,13 +40,22 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="LeadAgent",
     description="WhatsApp Lead Management Agent (MCP + Groq)",
-    version="1.1.0",
+    version="1.2.0",
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SessionMiddleware, secret_key=get_session_secret(), https_only=False)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=get_session_secret(),
+    session_cookie="leadagent_session",
+    max_age=60 * 60 * 8,
+    same_site="lax",
+    https_only=is_production(),
+)
+app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 app.include_router(admin_router, prefix="/admin")
+app.include_router(api_leads_router, prefix="/api")
 
 
 @app.on_event("startup")

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import os
-import secrets
 from typing import Any
 
 from fastapi import HTTPException, Request
 
 from app.config import get_owner_phones, is_registered_owner
+from app.security.passwords import verify_admin_password
 
 
 def get_admin_password() -> str | None:
@@ -20,17 +20,20 @@ def get_session_secret() -> str:
     return os.getenv("ADMIN_SESSION_SECRET", "dev-change-me-in-production")
 
 
+def is_production() -> bool:
+    return os.getenv("RENDER") == "true" or os.getenv("ENVIRONMENT") == "production"
+
+
 def login_owner(request: Request, owner_phone: str, password: str) -> bool:
     expected = get_admin_password()
     if not expected:
         return False
-    if not secrets.compare_digest(password, expected):
+    if not verify_admin_password(password, expected):
         return False
     normalized = owner_phone.strip().lstrip("+")
-    if not is_registered_owner(normalized):
-        allowed = get_owner_phones()
-        if allowed and normalized not in {p.lstrip("+") for p in allowed}:
-            return False
+    allowed = get_owner_phones()
+    if allowed and normalized not in {p.lstrip("+") for p in allowed}:
+        return False
     request.session["owner_phone"] = normalized
     return True
 
@@ -60,9 +63,9 @@ def dashboard_context(request: Request, **extra: Any) -> dict[str, Any]:
 
     owner = require_owner(request)
     return {
+        "request": request,
         "business_name": get_business_name(),
         "industry": get_industry(),
         "owner_phone": owner,
-        "active_page": extra.pop("active_page", ""),
         **extra,
     }

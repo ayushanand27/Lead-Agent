@@ -178,7 +178,8 @@ DATABASE_PASSWORD=your-database-password
 
 ## Production deployment
 
-**Step-by-step guide:** **[DEPLOY.md](DEPLOY.md)** — Supabase, Render, Meta webhook, and keep-alive.
+**Step-by-step guide:** **[DEPLOY.md](DEPLOY.md)** — Supabase, Render, Meta webhook, and keep-alive.  
+**Client handover ($1000 tier):** **[docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md)** — bcrypt, Google Sheets, lead webhook, cron.
 
 ### Summary
 
