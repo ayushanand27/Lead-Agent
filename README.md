@@ -1,33 +1,56 @@
-# mcp-build
+# LeadAgent
 
-**LeadAgent** — WhatsApp Lead Management Agent powered by MCP, Groq, and Supabase.
+**Stop losing WhatsApp leads. Your team texts a bot in Hindi or English — it organizes follow-ups, updates status, and backs up to Google Sheets.**
+
+Indian real estate teams, coaching centers, and SMBs get most leads on WhatsApp. Nobody has time to update Excel at 11 PM. LeadAgent is an **AI sales assistant on WhatsApp** — plus a simple admin dashboard when you want a full table view.
+
+**What you get**
+- New lead from website or IndiaMART → instant WhatsApp alert to the team
+- *"Surat ke leads kaun follow-up pending hain?"* → answer in seconds
+- Mark converted / send follow-up → bot asks **YES** before anything goes to a customer
+- Subah 9 baje: stale leads ka summary sab owners ko
+- Sheet backup — same lead update hoti hai, duplicate row nahi
+
+**Live demo:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin) · **Code:** [github.com/ayushanand27/mcp-build](https://github.com/ayushanand27/mcp-build)
 
 [![CI](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml)
 
-Indian SMB owners manage sales leads over WhatsApp in plain English or Hindi. Text the bot like you'd text an employee; a real MCP tool server and Groq agent handle the rest safely. A dark admin dashboard at `/admin` complements WhatsApp for leads, edits, Sheets sync, and export.
+---
 
-**Live:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health)  
-**Admin:** [lead-agent-to63.onrender.com/admin](https://lead-agent-to63.onrender.com/admin)  
-**Repo:** [github.com/ayushanand27/mcp-build](https://github.com/ayushanand27/mcp-build)
+## See it working
+
+| Admin dashboard | WhatsApp flow | Live deployment |
+|:---:|:---:|:---:|
+| ![Admin dashboard](docs/screenshots/admin-dashboard.png) | ![WhatsApp conversation](docs/screenshots/whatsapp-flow.png) | ![Health check](docs/screenshots/health-check.png) |
+| Lead table, edit, Sheets sync | Plain-language commands | Proves it's not "coming soon" |
+
+*Add PNGs to [`docs/screenshots/`](docs/screenshots/README.md) before LinkedIn/X — paths are wired.*
 
 ---
 
-## What's in this repo
+## Example: real estate team (Surat)
 
-| Path | Description |
-|------|-------------|
-| [`lead-agent/`](lead-agent/) | **Main application** — FastAPI webhook, Groq agent, MCP tools, Supabase Postgres |
-| [`render.yaml`](render.yaml) | Render.com infrastructure-as-code |
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | GitHub Actions — tests on every push |
+1. **IndiaMART** se lead aata hai → Zapier → LeadAgent → **WhatsApp alert:** *"New lead: Ramesh, 98765…, 2BHK Surat"*
+2. Agent message karta hai: *"Surat ke stale leads dikhao"*
+3. Bot: *"3 leads — Ramesh (warm), Priya (new), Amit (follow-up)…"*
+4. *"Ramesh ko follow-up draft karo"* → preview → **YES** → message draft ready
+5. Subah cron: *"Good morning — 12 total leads, 4 stale 2+ days"*
+6. Partner bhi same leads dekhta hai (`BUSINESS_OWNER_PHONES`) — shared pool
 
-All application code, tests, migrations, and **full documentation** live in **`lead-agent/`**.
-
-**→ [Read the complete documentation](lead-agent/README.md)** (architecture, setup, deployment, API, security)
-
-**Client handover:** [docs/CLIENT_SETUP.md](lead-agent/docs/CLIENT_SETUP.md) · [docs/CLIENT_GUIDE.md](lead-agent/docs/CLIENT_GUIDE.md) · [docs/ZAPIER_INDIA_MART.md](lead-agent/docs/ZAPIER_INDIA_MART.md)
+Set `BUSINESS_INDUSTRY=real_estate` to tune the agent prompt for property vocabulary.
 
 ---
 
+## For developers
+
+WhatsApp Lead Management Agent — MCP-powered stack for Indian SMBs.
+
+Indian SMB owners manage sales leads over WhatsApp in plain English or Hindi. A **real MCP server** with typed tools, **Groq** agent loop (`openai/gpt-oss-120b`), **FastAPI** webhook on Meta WhatsApp Cloud API. Confirmation before sends and terminal status changes. Multi-owner shared lead pool.
+
+**Full technical docs:** [lead-agent/README.md](lead-agent/README.md)  
+**Client handover:** [CLIENT_SETUP.md](lead-agent/docs/CLIENT_SETUP.md) · [CLIENT_GUIDE.md](lead-agent/docs/CLIENT_GUIDE.md) · [ZAPIER_INDIA_MART.md](lead-agent/docs/ZAPIER_INDIA_MART.md)
+
+---
 ## Architecture
 
 ```
@@ -61,12 +84,13 @@ uvicorn app.main:app --reload --port 8000
 | Agent | Groq `openai/gpt-oss-120b` + MCP (official SDK) |
 | Messaging | Meta WhatsApp Cloud API |
 | Database | Supabase Postgres (persistent) |
-| Hosting | Render.com (free tier) |
-| Cron | [cron-job.org](https://cron-job.org) (free daily summary) |
+| Hosting | Render.com |
+| Cron | [cron-job.org](https://cron-job.org) (daily summary) |
 | CI | GitHub Actions |
 
----
+> **Before client demos:** upgrade Render to **Starter** (~$7/mo) to remove cold-start delays on WhatsApp replies.
 
+---
 ## Status (live demo — June 2026)
 
 | Feature | Status |
@@ -83,10 +107,11 @@ uvicorn app.main:app --reload --port 8000
 | Supabase Postgres | ✅ |
 | Deployed on Render | ✅ |
 | Meta test sandbox (up to 5 recipients) | ✅ |
-| GitHub Actions CI (12 tests) | ✅ |
+| Automated test suite + CI | ✅ |
+
+> **Repo rename (optional):** GitHub → Settings → rename `mcp-build` → `leadagent` so your LinkedIn link matches the product name.
 
 ---
-
 ## License
 
 MIT

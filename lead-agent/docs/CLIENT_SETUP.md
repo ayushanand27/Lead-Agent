@@ -1,6 +1,6 @@
-# LeadAgent — Client setup guide ($1000 tier, free hosting)
+# LeadAgent — Client setup & handover guide
 
-Step-by-step setup for **Render (free) + Supabase (free) + Meta test WhatsApp**. No paid Cursor deploy required.
+Step-by-step deploy for **Render + Supabase + Meta WhatsApp**. Use this when onboarding a paying client after demo.
 
 ---
 
@@ -70,12 +70,22 @@ Login still uses the **plain password** you typed — only the stored env value 
 
 ```javascript
 function doPost(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    return ContentService.createTextOutput(JSON.stringify({ error: "No data received" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  var data;
+  try {
+    data = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: "Invalid JSON" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Leads");
   if (!sheet) {
     return ContentService.createTextOutput(JSON.stringify({ error: "Leads sheet missing" }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  var data = JSON.parse(e.postData.contents);
   var row = [
     data.id || "",
     data.name || "",
@@ -92,9 +102,11 @@ function doPost(e) {
   ];
   var id = String(data.id || "");
   var lastRow = sheet.getLastRow();
-  for (var i = 2; i <= lastRow; i++) {
-    if (String(sheet.getRange(i, 1).getValue()) === id) {
-      sheet.getRange(i, 1, 1, row.length).setValues([row]);
+  if (lastRow >= 2) {
+    var allIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String);
+    var rowIndex = allIds.indexOf(id);
+    if (rowIndex !== -1) {
+      sheet.getRange(rowIndex + 2, 1, 1, row.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, updated: true }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -105,10 +117,12 @@ function doPost(e) {
 }
 ```
 
-3. **Deploy → New deployment → Web app**
+3. **Deploy → Manage deployments → Edit** (keeps same URL) or New deployment
    - Execute as: **Me**
    - Who has access: **Anyone**
 4. Copy **Web app URL** → Render env: `GOOGLE_SHEETS_WEBHOOK_URL`
+
+If you create a **new** deployment, update `GOOGLE_SHEETS_WEBHOOK_URL` on Render with the new URL.
 
 Every lead create/update from WhatsApp or webhook syncs to the sheet automatically.
 
@@ -223,20 +237,40 @@ Click **Test run** / **Run now** → should return `{"status":"ok",...}` and you
 
 ---
 
-## 8. What you sell for ~$1000
+## 8. Production WhatsApp (paid client deliverable)
 
-| Included | Not included (upsell later) |
-|----------|----------------------------|
-| Deploy + env setup | Real WABA number + Meta verification |
-| WhatsApp AI agent | Team shared inbox |
-| Admin dashboard | Broadcast campaigns |
-| Google Sheets sync | AI voice calling |
-| Lead webhook | GST / invoicing |
-| 30-day bugfix support (your terms) | Render paid tier (no cold start) |
+Demo uses Meta's **test number**. A paying client needs a **real WABA**:
+
+| Step | Action |
+|------|--------|
+| 1 | Client buys / dedicates a phone number (not on regular WhatsApp app) |
+| 2 | Meta Business Manager → add number → verify via SMS/voice |
+| 3 | Complete **Business Verification** (2–5 business days) |
+| 4 | App Review → `whatsapp_business_messaging` permission |
+| 5 | Update Render: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TOKEN` (System User) |
+| 6 | Upgrade Render to **Starter** (~$7/mo) — no cold starts |
+| 7 | Re-subscribe webhook on new WABA if number ID changed |
+
+Until this is done, outbound messages only reach numbers on Meta's test recipient list (max 5).
 
 ---
 
-## 9. Verify everything works
+## 9. Typical client package
+
+| Included in setup | Upsell later |
+|-------------------|--------------|
+| Deploy + env + handover doc | Broadcast / template campaigns |
+| WhatsApp AI agent + confirmation | Team inbox UI beyond dashboard |
+| Admin dashboard + CSV | Voice note transcription |
+| Google Sheets sync | Razorpay payment links in chat |
+| Lead webhook (website / IndiaMART) | Custom CRM integrations |
+| 30-day bugfix (your terms) | Ongoing retainer |
+
+**Pricing path (0 case studies):** first client ₹15k–25k setup → testimonial → raise price. Don't quote premium until you have live client proof.
+
+---
+
+## 10. Verify everything works
 
 ```bash
 curl https://lead-agent-to63.onrender.com/health

@@ -1,14 +1,43 @@
-# LeadAgent — WhatsApp Lead Management Agent (MCP-powered)
+# LeadAgent — WhatsApp Lead Management Agent
 
 [![CI](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml/badge.svg)](https://github.com/ayushanand27/mcp-build/actions/workflows/ci.yml)
 
-**AI agent for Indian SMBs to manage sales leads via WhatsApp in plain English/Hindi.**
+**Most Indian SMBs lose WhatsApp leads because follow-up is manual — notes in chat, Excel at midnight, no one knows who's stale.**
 
-LeadAgent lets a small business owner text a WhatsApp bot like they'd text an employee — *"which leads haven't I called in 2 days?"*, *"mark Ramesh as converted"*, *"send a follow-up to Priya"* — and get safe, auditable results. A **classic dark admin dashboard** (`/admin`) complements WhatsApp for leads, activity, and CSV export.
+LeadAgent fixes that. Your sales team texts a WhatsApp bot in **plain Hindi or English** like they'd text an employee. It lists leads, flags who you haven't called, drafts follow-ups, and asks **YES** before anything goes to a customer. New leads from your website or IndiaMART ping the team instantly. Every morning: a summary of who needs attention. Google Sheets stays in sync. Two partners can share the same lead pool.
 
-Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent loop** that decides which tools to call, and a **FastAPI webhook** wired to Meta's WhatsApp Cloud API. Every write that matters asks for confirmation first. Partners sharing one business see the same lead pool via `BUSINESS_OWNER_PHONES`.
+**Live:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin)
 
-**Live demo:** [lead-agent-to63.onrender.com](https://lead-agent-to63.onrender.com/health) · **Admin:** [/admin](https://lead-agent-to63.onrender.com/admin)
+---
+
+## Screenshots
+
+| Admin | WhatsApp | Live |
+|:---:|:---:|:---:|
+| ![Admin](../docs/screenshots/admin-dashboard.png) | ![WhatsApp](../docs/screenshots/whatsapp-flow.png) | ![Health](../docs/screenshots/health-check.png) |
+
+Add images to [`docs/screenshots/`](../docs/screenshots/README.md) before posting on LinkedIn.
+
+---
+
+## Real estate example (Surat)
+
+| Step | What happens |
+|------|----------------|
+| 1 | IndiaMART lead → Zapier → LeadAgent → **WhatsApp:** *"New lead: Ramesh, 98765…, 2BHK Surat"* |
+| 2 | Agent: *"Surat ke stale leads dikhao"* |
+| 3 | Bot lists leads with status + days since contact |
+| 4 | *"Ramesh ko follow-up draft karo"* → preview → **YES** → ready to send |
+| 5 | 9 AM cron → both owners get stale-lead count |
+| 6 | Dashboard `/admin` → edit status, tags, export CSV, Sheets sync |
+
+Set `BUSINESS_INDUSTRY=real_estate` for property-focused prompts. Same flow works for coaching, trading, general SMB.
+
+---
+
+## For developers
+
+LeadAgent is an MCP-powered agent: a **real MCP server** with typed tools, a **Groq** loop (`openai/gpt-oss-120b`), and a **FastAPI** webhook on Meta WhatsApp Cloud API. Confirmation gate on destructive actions. Multi-owner scope via `BUSINESS_OWNER_PHONES`.
 
 ---
 
@@ -82,7 +111,7 @@ Under the hood: a **real MCP server** with typed tools, a **Groq-powered agent l
 | Rate limiting | slowapi (30 req/min on webhook) |
 | CI/CD | GitHub Actions (`.github/workflows/ci.yml`) |
 | IaC | `render.yaml` at repo root |
-| Hosting | Render.com (free tier) |
+| Hosting | Render.com |
 
 ---
 
@@ -189,8 +218,10 @@ DATABASE_PASSWORD=your-database-password
 ## Production deployment
 
 **Step-by-step guide:** **[DEPLOY.md](DEPLOY.md)** — Supabase, Render, Meta webhook, and keep-alive.  
-**Client handover ($1000 tier):** **[docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md)** — bcrypt, Google Sheets, lead webhook, cron.  
+**Client handover:** **[docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md)** — deploy, Sheets, webhook, cron, production WABA checklist.  
 **Command guide:** **[docs/CLIENT_GUIDE.md](docs/CLIENT_GUIDE.md)** · **IndiaMART/Zapier:** **[docs/ZAPIER_INDIA_MART.md](docs/ZAPIER_INDIA_MART.md)**
+
+> Upgrade Render to **Starter** (~$7/mo) before client-facing demos to avoid cold-start delays.
 
 ### Summary
 
@@ -226,9 +257,9 @@ curl https://lead-agent-to63.onrender.com/api/leads/health
 
 WhatsApp test: message the Meta test number → `Add lead Ramesh phone 9876543210 from Surat` → check row in Supabase **Table Editor** → `leads`.
 
-### Keep-alive (Render free tier)
+### Keep-alive (optional on Starter plan)
 
-Use [UptimeRobot](https://uptimerobot.com) to ping every **5 minutes**:
+If still on Render's sleep-prone plan, ping every **5 minutes**:
 
 ```
 https://lead-agent-to63.onrender.com/health
@@ -297,13 +328,12 @@ pytest tests/ -v
 | Parameterized SQL | No string-interpolated queries |
 | Pinned Python runtime | `runtime.txt` → 3.11.11 |
 
-**Known v1 limitations (acceptable for portfolio / test sandbox):**
-- Meta **test number** only — messages deliver to **verified recipient list** (max 5 numbers); not production WABA
-- No Redis / job queue (single Render instance)
-- Sentry optional — not required for demo
-- Render free tier cold starts (~15–30s wake) unless UptimeRobot ping or Starter plan
+**Known limitations (demo vs paid client):**
+- Meta **test number** — production WABA + Business Verification required for real customers (see [DEPLOY.md §7](DEPLOY.md#7-going-to-real-production-later))
+- No broadcast campaigns or template blasts (not a WATI clone)
+- Sentry optional
 
-**Verified live (June 2026):** multi-owner cron summary, dashboard edit + Sheets upsert, webhook alerts, cron-job.org daily job at 9 AM IST.
+**Verified live (June 2026):** multi-owner cron, dashboard edit + Sheets upsert, webhook alerts.
 
 ---
 
@@ -367,7 +397,7 @@ lead-agent/
 │   ├── templates/admin/   # Jinja2 HTML (leads, lead_edit, …)
 │   └── whatsapp.py        # Meta Cloud API helpers
 ├── docs/
-│   ├── CLIENT_SETUP.md    # $1000 tier handover (Sheets, cron, webhook)
+│   ├── CLIENT_SETUP.md    # Client deploy handover (Sheets, cron, webhook)
 │   ├── CLIENT_GUIDE.md    # WhatsApp command cheat sheet
 │   └── ZAPIER_INDIA_MART.md
 ├── scripts/
@@ -397,7 +427,7 @@ lead-agent/
 |---------|--------------|-----|
 | Render deploy fails on startup | Bad `DATABASE_URL` | Use `DATABASE_URL` (no password) + `DATABASE_PASSWORD` separately |
 | `password authentication failed` | `@` in password broke URL | Use separate `DATABASE_PASSWORD` or URL-encode password |
-| No WhatsApp reply | Render asleep (free tier) | Ping `/health`, wait 30s, message again |
+| No WhatsApp reply | Service waking / webhook | Ping `/health`, wait 30s; use Render Starter for clients |
 | No WhatsApp reply | Webhook not subscribed | Meta → WhatsApp → Configuration → subscribe `messages` |
 | Leads gone after redeploy | SQLite on Render (old setup) | Set `DATABASE_URL` to Supabase |
 | OAuth error 190 | Expired WhatsApp token | Regenerate System User token on Meta |
@@ -410,19 +440,11 @@ lead-agent/
 
 ## Test results
 
-All local test suites passing:
+```bash
+cd lead-agent && pytest tests/ -v
+```
 
-| Suite | Command | Status |
-|-------|---------|--------|
-| Read tools | `python scripts/test_read_tools.py` | Pass |
-| Write tools | `python scripts/test_write_tools.py` | Pass |
-| Agent loop | `python scripts/test_agent.py` | Pass |
-| Webhook | `python scripts/test_webhook.py` | Pass |
-| Owner isolation | `pytest tests/test_owner_isolation.py -v` | 3 pass |
-| Security + webhook | `pytest tests/test_security.py -v` | 5 pass |
-| Multi-owner + tags | `pytest tests/test_multi_owner.py -v` | 2 pass |
-| Sheets sync | `pytest tests/test_sheets_sync.py -v` | 2 pass |
-| **Total pytest** | `pytest tests/ -v` | **12 pass** |
+Covers owner isolation, admin security, multi-owner pool, Sheets sync serialization.
 
 ---
 
