@@ -115,4 +115,4 @@ uvicorn app.main:app --reload --port 8000
 
 Unauthorized copying, redistribution, or commercial use without written permission is prohibited.
 
-> **Portfolio note:** This repository may be private; the live product demo remains at [lead-agent-to63.onrender.com/admin/login](https://lead-agent-to63.onrender.com/admin/login).
+> **Portfolio note:** After demo recording, set this repo to **private** (invite-only). Steps: [docs/PRIVATE_REPO.md](docs/PRIVATE_REPO.md). Live demo stays at [lead-agent-to63.onrender.com/admin/login](https://lead-agent-to63.onrender.com/admin/login).
