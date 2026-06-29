@@ -47,8 +47,24 @@ WELCOME_REPLY = (
     "Hindi ya English — jo aapko easy lage."
 )
 _GREETINGS = frozenset({
-    "hi", "hello", "hey", "hii", "hiii", "yo", "namaste", "start", "help",
+    "hi", "hello", "hey", "hii", "hiii", "yo", "namaste", "namaskar", "start", "help",
+    "hlo", "hlw", "helo", "hola", "gm", "sup", "hiiii",
 })
+_MAX_GREETING_WORDS = 4
+
+
+def _is_greeting(text: str) -> bool:
+    """Match hi/hello even with punctuation, emoji-adjacent text, or short extras."""
+    cleaned = re.sub(r"[^\w\s]", " ", text.strip().lower())
+    normalized = " ".join(cleaned.split())
+    if not normalized:
+        return False
+    if normalized in _GREETINGS:
+        return True
+    words = normalized.split()
+    if words[0] in _GREETINGS and len(words) <= _MAX_GREETING_WORDS:
+        return True
+    return False
 MAX_AGENT_ITERATIONS = 8
 
 # OpenAI-compatible tool schemas (owner_phone is injected server-side, not by the model)
@@ -864,7 +880,7 @@ async def handle_message(owner_phone: str, message_text: str) -> str:
     if not is_registered_owner(owner_phone):
         return "This number is not registered for this business account. Please contact your administrator."
 
-    if text.lower() in _GREETINGS:
+    if _is_greeting(text):
         return WELCOME_REPLY
 
     pending = pending_store.get_pending(owner_phone)
