@@ -6,7 +6,7 @@
   <form method="get" action="/admin/leads" style="display:flex;gap:0.5rem;flex-wrap:wrap">
     <input type="search" name="q" value="{{ query or '' }}" placeholder="Search name, phone, source…" />
     <select name="status">
-      <option value="">All statuses</option>
+      <option value="">Status</option>
       {% for s in statuses %}
       <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
       {% endfor %}
