@@ -30,6 +30,7 @@ from app.api.leads import router as api_leads_router
 from app.logging_config import configure_logging
 from app.security.headers import SecurityHeadersMiddleware
 from app.media import transcribe_whatsapp_audio
+from app.text_normalize import romanize_query
 from app.whatsapp import send_whatsapp_reply, verify_webhook
 
 load_dotenv()
@@ -137,6 +138,7 @@ async def _process_incoming_message(
                 )
                 return
             logger.info("Voice note transcribed for %s: %s", owner_phone, text[:120])
+            text = romanize_query(text)
 
         if not text:
             return

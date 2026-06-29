@@ -80,7 +80,7 @@ Repo is private. DM me if you want to explore this.
 
 **ACTION:** Type →
 ```text
-add lead Priya Mehta phone 9876543210 from LinkedIn
+add lead Priya Mittal phone 9876543210 from LinkedIn
 ```
 
 **SAY:**
@@ -113,7 +113,7 @@ add lead Priya Mehta phone 9876543210 from LinkedIn
 
 ### SCENE 4 — Safe confirmation (35 sec)
 
-**ACTION:** Type → `mark Priya Mehta as converted`
+**ACTION:** Type → `mark Priya Mittal as converted`
 
 **SAY:**
 
@@ -205,10 +205,10 @@ add lead Priya Mehta phone 9876543210 from LinkedIn
 |---|--------|
 | 1 | WhatsApp → `Hi` |
 | 2 | `list all my leads` |
-| 3 | `add lead Priya Mehta phone 9876543210 from LinkedIn` |
+| 3 | `add lead Priya Mittal phone 9876543210 from LinkedIn` |
 | 4 | `who haven't I contacted in 2 days?` |
 | 5 | Voice: "search Priya" *(optional)* |
-| 6 | `mark Priya Mehta as converted` → `NO` |
+| 6 | `mark Priya Mittal as converted` → `NO` |
 | 7 | Admin → Dashboard |
 | 8 | Leads → filter → Edit |
 | 9 | Analytics |

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ from typing import Any, Iterator, Optional
 from dotenv import load_dotenv
 
 from app.config import get_owner_scope
+from app.text_normalize import latin_tokens, search_query_variants
 
 load_dotenv()
 
@@ -342,7 +344,26 @@ def fetch_stale_leads(owner_phone: str, days_since_contact: int) -> list[dict]:
 
 
 def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
-    pattern = f"%{query_text.strip()}%"
+    query = query_text.strip()
+    if not query:
+        return []
+
+    for variant in search_query_variants(query):
+        hits = _sql_search_phrase(owner_phone, variant)
+        if hits:
+            return hits
+
+    tokens = latin_tokens(query)
+    if tokens:
+        hits = _sql_search_name_tokens(owner_phone, tokens)
+        if hits:
+            return hits
+
+    return _fuzzy_scan_leads(owner_phone, tokens or [query])
+
+
+def _sql_search_phrase(owner_phone: str, phrase: str) -> list[dict]:
+    pattern = f"%{phrase.strip()}%"
     like_op = "ILIKE" if _use_postgres() else "LIKE"
     if _use_postgres():
         notes_expr = "COALESCE(notes, '')"
@@ -371,6 +392,56 @@ def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [_row_to_dict(row) for row in rows]
+
+
+def _sql_search_name_tokens(owner_phone: str, tokens: list[str]) -> list[dict]:
+    if not tokens:
+        return []
+
+    like_op = "ILIKE" if _use_postgres() else "LIKE"
+    scope_clause, scope_params = _scope_sql(owner_phone)
+    name_checks = " AND ".join(f"name {like_op} %s" for _ in tokens)
+    params: list[Any] = list(scope_params)
+    for token in tokens:
+        params.append(f"%{token}%")
+
+    query = _q(
+        f"""
+        SELECT {_LEAD_COLUMNS}
+        FROM leads
+        WHERE {scope_clause}
+          AND ({name_checks})
+        ORDER BY created_at DESC
+        """
+    )
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+def _fuzzy_scan_leads(owner_phone: str, tokens: list[str]) -> list[dict]:
+    """Last resort — scan scoped leads when script or encoding breaks SQL match."""
+    if not tokens:
+        return []
+
+    leads = fetch_leads_for_owner(owner_phone)
+    matches: list[dict] = []
+    for lead in leads:
+        name_lower = str(lead.get("name", "")).lower()
+        name_parts = re.findall(r"[a-z]{2,}", name_lower)
+        hits = 0
+        for token in tokens:
+            token = token.lower()
+            if token in name_lower:
+                hits += 1
+                continue
+            for part in name_parts:
+                if part.startswith(token[:3]) or token.startswith(part[:3]):
+                    hits += 1
+                    break
+        if hits >= 1 and hits >= min(len(tokens), 1):
+            matches.append(lead)
+    return matches
 
 
 def fetch_lead_by_id(owner_phone: str, lead_id: int) -> Optional[dict]:

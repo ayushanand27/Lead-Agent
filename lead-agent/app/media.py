@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 WHISPER_PROMPT = (
-    "WhatsApp lead commands in English or Hindi: search Priya, list all my leads, "
+    "Latin script only. WhatsApp lead commands: search Priya Mittal, list all my leads, "
     "add lead Rahul phone 9876543210 from website, who have not been contacted in 2 days."
 )
 

@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.config import build_system_prompt, is_registered_owner
 from app.pending_actions import is_confirmation_message, pending_store, requires_confirmation
+from app.text_normalize import romanize_query
 
 logger = logging.getLogger(__name__)
 
@@ -725,6 +726,61 @@ def _format_search_results(result: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_list_results(result: dict) -> str:
+    if not result.get("success"):
+        return "Couldn't load leads. Please try again."
+
+    leads = result["data"].get("leads", [])
+    count = int(result["data"].get("count", len(leads)))
+    if count == 0:
+        return "You have no leads yet."
+
+    lines = [f"Here are your {count} lead(s):\n"]
+    for index, lead in enumerate(leads[:20], start=1):
+        lines.append(
+            f"{index}. {lead['name']} — {lead['phone']} — "
+            f"{lead['source']} — {lead['status']}"
+        )
+    if count > 20:
+        lines.append(f"\n...and {count - 20} more.")
+    return "\n".join(lines)
+
+
+def _format_stale_results(result: dict) -> str:
+    if not result.get("success"):
+        return "Couldn't check stale leads. Please try again."
+
+    data = result["data"]
+    days = int(data.get("days_since_contact", 2))
+    count = int(data.get("count", 0))
+    if count == 0:
+        return f"No stale leads — everyone was contacted within the last {days} days."
+
+    lines = [f"Leads not contacted in {days}+ days ({count}):\n"]
+    for index, lead in enumerate(data.get("leads", [])[:15], start=1):
+        lines.append(
+            f"{index}. {lead['name']} — {lead['phone']} — {lead['status']}"
+        )
+    return "\n".join(lines)
+
+
+def _format_create_lead_result(result: dict) -> str:
+    if not result.get("success"):
+        return result.get("error") or "Couldn't add that lead. Please try again."
+    lead = result["data"]["lead"]
+    return (
+        f"Done! Added {lead['name']} ({lead['phone']}) from {lead['source']}."
+    )
+
+
+_DIRECT_REPLY_TOOLS: dict[str, Any] = {
+    "list_leads": _format_list_results,
+    "search_leads": _format_search_results,
+    "get_stale_leads": _format_stale_results,
+    "create_lead": _format_create_lead_result,
+}
+
+
 def _try_search_fast_path(
     owner_phone: str,
     message_text: str,
@@ -740,11 +796,89 @@ def _try_search_fast_path(
     if not query:
         return None
 
-    if not voice and not _has_search_intent(lower) and len(query.split()) > 2:
-        return None
-
     result = lead_service.search_leads(owner_phone, query)
     return _format_search_results(result)
+
+
+_CREATE_LEAD_RE = re.compile(
+    r"add\s+lead\s+(.+?)\s+phone\s+([+\d][\d\s]{4,})\s+from\s+(.+)",
+    re.IGNORECASE,
+)
+
+_STATUS_UPDATE_RE = re.compile(
+    r"mark\s+(.+?)\s+as\s+(new|contacted|warm|hot|converted|lost)\b",
+    re.IGNORECASE,
+)
+
+
+def _try_list_fast_path(owner_phone: str, message_text: str) -> str | None:
+    lower = message_text.lower()
+    if not re.search(r"\blist\b", lower) or not re.search(r"\bleads?\b", lower):
+        return None
+    return _format_list_results(lead_service.list_leads(owner_phone))
+
+
+def _try_stale_fast_path(owner_phone: str, message_text: str) -> str | None:
+    lower = message_text.lower()
+    stale_hints = (
+        "stale",
+        "haven't i contacted",
+        "have not contacted",
+        "not contacted",
+        "contact nahi",
+        "follow-up pending",
+        "follow up pending",
+    )
+    if not any(hint in lower for hint in stale_hints):
+        return None
+
+    days = 2
+    match = re.search(r"(\d+)\s*(?:din|days?)", lower)
+    if match:
+        days = max(1, int(match.group(1)))
+
+    return _format_stale_results(lead_service.get_stale_leads(owner_phone, days))
+
+
+def _try_create_lead_fast_path(owner_phone: str, message_text: str) -> str | None:
+    match = _CREATE_LEAD_RE.search(message_text.strip())
+    if not match:
+        return None
+    name, phone, source = match.group(1).strip(), match.group(2).strip(), match.group(3).strip()
+    phone = re.sub(r"[\s\-]", "", phone)
+    result = lead_service.create_lead(owner_phone, name, phone, source)
+    return _format_create_lead_result(result)
+
+
+def _try_status_update_fast_path(owner_phone: str, message_text: str) -> str | None:
+    match = _STATUS_UPDATE_RE.search(message_text.strip())
+    if not match:
+        return None
+    name_hint, new_status = match.group(1).strip(), match.group(2).lower()
+    search = lead_service.search_leads(owner_phone, name_hint)
+    if not search.get("success") or search["data"]["count"] == 0:
+        return f'No lead found matching "{name_hint}".'
+
+    lead = search["data"]["leads"][0]
+    if requires_confirmation("update_lead_status", new_status=new_status):
+        pending_store.set_pending(
+            owner_phone,
+            {
+                "tool": "update_lead_status",
+                "lead_id": lead["id"],
+                "new_status": new_status,
+                "lead_name": lead["name"],
+            },
+        )
+        return (
+            f"This will mark {lead['name']} as {new_status}.\n\n"
+            "Reply YES to confirm, or tell me to cancel."
+        )
+
+    result = lead_service.update_lead_status(owner_phone, lead["id"], new_status)
+    if result.get("success"):
+        return f"Done! {lead['name']} is now marked as {new_status}."
+    return result.get("error") or "Couldn't update that lead."
 
 
 def _remember_lead_from_tool_result(
@@ -801,6 +935,10 @@ def execute_validated_tool(
 
     if tool_name == "draft_followup_message" and result.get("success"):
         _store_pending_from_draft_result(owner_phone, result)
+
+    formatter = _DIRECT_REPLY_TOOLS.get(tool_name)
+    if formatter is not None:
+        return formatter(result), True
 
     return json.dumps(result, default=str), False
 
@@ -994,6 +1132,8 @@ async def handle_message(
     Returns plain-text reply to send back on WhatsApp.
     """
     text = (message_text or "").strip()
+    if from_voice and text:
+        text = romanize_query(text)
     if not text:
         return "Send me a message about your leads — e.g. 'list all my leads' or 'who haven't I called in 2 days?'"
 
@@ -1014,13 +1154,29 @@ async def handle_message(
         reply = await _run_agent_loop(owner_phone, text)
         return f"{CANCELLED_PREFIX}{reply}"
 
-    fast_path = _try_send_followup_fast_path(owner_phone, text)
+    fast_path = _try_list_fast_path(owner_phone, text)
     if fast_path is not None:
         return fast_path
+
+    stale_path = _try_stale_fast_path(owner_phone, text)
+    if stale_path is not None:
+        return stale_path
+
+    create_path = _try_create_lead_fast_path(owner_phone, text)
+    if create_path is not None:
+        return create_path
+
+    status_path = _try_status_update_fast_path(owner_phone, text)
+    if status_path is not None:
+        return status_path
 
     search_path = _try_search_fast_path(owner_phone, text, voice=from_voice)
     if search_path is not None:
         return search_path
+
+    followup_path = _try_send_followup_fast_path(owner_phone, text)
+    if followup_path is not None:
+        return followup_path
 
     return await _run_agent_loop(owner_phone, text)
 
