@@ -295,6 +295,7 @@ def seed_test_leads(owner_phone: str) -> int:
 def fetch_leads_for_owner(
     owner_phone: str,
     status_filter: Optional[str] = None,
+    source_filter: Optional[str] = None,
 ) -> list[dict]:
     scope_clause, scope_params = _scope_sql(owner_phone)
     query = f"""
@@ -307,6 +308,10 @@ def fetch_leads_for_owner(
     if status_filter is not None:
         query += " AND status = %s"
         params.append(status_filter)
+
+    if source_filter is not None:
+        query += " AND source = %s"
+        params.append(source_filter)
 
     query += " ORDER BY created_at DESC"
 
@@ -629,6 +634,86 @@ def fetch_lead_stats(owner_phone: str) -> dict[str, Any]:
     total = int(total_row["c"] if isinstance(total_row, dict) else total_row[0])
     by_status = {str(r["status"]): int(r["c"]) for r in status_rows}
     return {"total": total, "by_status": by_status}
+
+
+def fetch_lead_sources(owner_phone: str) -> list[str]:
+    scope_clause, scope_params = _scope_sql(owner_phone)
+    with get_connection() as conn:
+        rows = conn.execute(
+            _q(
+                f"""
+                SELECT DISTINCT source
+                FROM leads
+                WHERE {scope_clause}
+                ORDER BY source ASC
+                """
+            ),
+            scope_params,
+        ).fetchall()
+    return [str(r["source"]) for r in rows if r["source"]]
+
+
+def fetch_analytics(owner_phone: str, days: int = 14) -> dict[str, Any]:
+    stats = fetch_lead_stats(owner_phone)
+    total = stats["total"]
+    by_status = stats["by_status"]
+    converted = by_status.get("converted", 0)
+    lost = by_status.get("lost", 0)
+    active = total - converted - lost
+    conversion_rate = round((converted / total * 100) if total else 0, 1)
+
+    scope_clause, scope_params = _scope_sql(owner_phone)
+    with get_connection() as conn:
+        source_rows = conn.execute(
+            _q(
+                f"""
+                SELECT source, COUNT(*) AS c
+                FROM leads
+                WHERE {scope_clause}
+                GROUP BY source
+                ORDER BY c DESC
+                """
+            ),
+            scope_params,
+        ).fetchall()
+
+        if _use_postgres():
+            day_expr = "DATE(created_at)"
+        else:
+            day_expr = "date(created_at)"
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date().isoformat()
+        day_rows = conn.execute(
+            _q(
+                f"""
+                SELECT {day_expr} AS day, COUNT(*) AS c
+                FROM leads
+                WHERE {scope_clause}
+                  AND {day_expr} >= %s
+                GROUP BY {day_expr}
+                ORDER BY day ASC
+                """
+            ),
+            (*scope_params, cutoff),
+        ).fetchall()
+
+    by_source = {str(r["source"]): int(r["c"]) for r in source_rows}
+    leads_by_day = [
+        {"day": str(r["day"]), "count": int(r["c"])}
+        for r in day_rows
+    ]
+
+    return {
+        "total": total,
+        "active": active,
+        "converted": converted,
+        "lost": lost,
+        "conversion_rate": conversion_rate,
+        "by_status": by_status,
+        "by_source": by_source,
+        "leads_by_day": leads_by_day,
+        "days": days,
+    }
 
 
 def upsert_pending_action(owner_phone: str, action_dict: dict[str, Any]) -> None:

@@ -31,9 +31,11 @@ from app.security.rate_limit import (
     record_login_failure,
 )
 from app.security.request_info import get_client_ip
+from app.utils.formatting import mask_phone
 
 router = APIRouter(tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["mask_phone"] = mask_phone
 
 STATUSES = sorted(LEAD_STATUS_VALUES)
 STALE_DAYS = int(os.getenv("STALE_LEAD_DAYS", "2"))
@@ -132,11 +134,14 @@ async def dashboard_home(request: Request) -> HTMLResponse:
         return _redirect_login()
     owner = require_owner(request)
     stats = db.fetch_lead_stats(owner)
+    converted = stats["by_status"].get("converted", 0)
+    conversion_rate = round((converted / stats["total"] * 100) if stats["total"] else 0, 1)
     stale = db.fetch_stale_leads(owner, STALE_DAYS)
     ctx = dashboard_context(
         request,
         active_page="dashboard",
         stats=stats,
+        conversion_rate=conversion_rate,
         stale_count=len(stale),
         stale_days=STALE_DAYS,
         recent_activity=db.fetch_action_log(owner, limit=8),
@@ -149,6 +154,7 @@ async def leads_page(
     request: Request,
     q: str | None = None,
     status: str | None = None,
+    source: str | None = None,
 ) -> HTMLResponse:
     if not get_session_owner(request):
         return _redirect_login()
@@ -156,9 +162,15 @@ async def leads_page(
     if q:
         leads = db.search_leads_for_owner(owner, q)
     else:
-        leads = db.fetch_leads_for_owner(owner, status_filter=status or None)
+        leads = db.fetch_leads_for_owner(
+            owner,
+            status_filter=status or None,
+            source_filter=source or None,
+        )
     if status and q:
         leads = [lead for lead in leads if lead.get("status") == status]
+    if source and q:
+        leads = [lead for lead in leads if lead.get("source") == source]
 
     ctx = dashboard_context(
         request,
@@ -166,11 +178,28 @@ async def leads_page(
         leads=leads,
         query=q,
         status_filter=status,
+        source_filter=source,
+        sources=db.fetch_lead_sources(owner),
         statuses=STATUSES,
         sheets_sync_enabled=is_sheets_sync_enabled(),
         sync_message=request.query_params.get("sync"),
     )
     return templates.TemplateResponse(request, "admin/leads.html", ctx)
+
+
+@router.get("/analytics", response_class=HTMLResponse)
+async def analytics_page(request: Request, days: int = 14) -> HTMLResponse:
+    if not get_session_owner(request):
+        return _redirect_login()
+    owner = require_owner(request)
+    days = max(7, min(days, 90))
+    analytics = db.fetch_analytics(owner, days=days)
+    ctx = dashboard_context(
+        request,
+        active_page="analytics",
+        analytics=analytics,
+    )
+    return templates.TemplateResponse(request, "admin/analytics.html", ctx)
 
 
 @router.post("/leads/sync-sheets", response_model=None)
@@ -312,5 +341,8 @@ async def settings_page(request: Request) -> HTMLResponse:
         sheets_sync_enabled=bool(os.getenv("GOOGLE_SHEETS_WEBHOOK_URL", "").strip()),
         lead_webhook_enabled=bool(os.getenv("LEAD_WEBHOOK_SECRET", "").strip()),
         production_mode=is_production(),
+        db_connected=db.check_connection(),
+        cron_configured=bool(os.getenv("CRON_SECRET", "").strip()),
+        app_base_url=str(request.base_url).rstrip("/"),
     )
     return templates.TemplateResponse(request, "admin/settings.html", ctx)

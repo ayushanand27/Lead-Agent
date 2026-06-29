@@ -2,20 +2,53 @@
 {% block title %}Settings — {{ business_name }}{% endblock %}
 {% block page_title %}Settings{% endblock %}
 {% block content %}
-<div class="card" style="max-width:560px">
-  <p class="muted" style="margin-bottom:1rem">Business configuration (set via environment variables on deploy).</p>
-  <table>
-    <tbody>
-      <tr><th>Business name</th><td>{{ business_name }}</td></tr>
-      <tr><th>Industry</th><td>{{ industry }}</td></tr>
-      <tr><th>Owner account</th><td class="muted">Signed in</td></tr>
-      <tr><th>Registered owners</th><td class="muted">{{ owner_phones_display }}</td></tr>
-      <tr><th>WhatsApp bot</th><td class="muted">Message your business WhatsApp number</td></tr>
-      <tr><th>Daily summary</th><td class="muted">POST /internal/cron/daily-summary (cron secret)</td></tr>
-      <tr><th>Lead webhook</th><td>{% if lead_webhook_enabled %}<span class="badge ok">Active</span> POST /api/leads{% else %}<span class="muted">Set LEAD_WEBHOOK_SECRET</span>{% endif %}</td></tr>
-      <tr><th>Google Sheets sync</th><td>{% if sheets_sync_enabled %}<span class="badge ok">Active</span>{% else %}<span class="muted">Set GOOGLE_SHEETS_WEBHOOK_URL</span>{% endif %}</td></tr>
-      <tr><th>Security</th><td>{% if production_mode %}Production cookies + headers{% else %}Development mode{% endif %}</td></tr>
-    </tbody>
-  </table>
+<div class="settings-grid">
+  <div class="card" style="max-width:560px">
+    <p class="muted" style="margin-bottom:1rem">Business configuration (set via environment variables on deploy).</p>
+    <table>
+      <tbody>
+        <tr><th>Business name</th><td>{{ business_name }}</td></tr>
+        <tr><th>Industry</th><td>{{ industry }}</td></tr>
+        <tr><th>Owner account</th><td class="muted">Signed in</td></tr>
+        <tr><th>Registered owners</th><td class="muted">{{ owner_phones_display }}</td></tr>
+        <tr><th>WhatsApp bot</th><td class="muted">Message your business WhatsApp number · voice notes supported</td></tr>
+        <tr><th>Daily summary</th><td class="muted">POST /internal/cron/daily-summary (cron secret)</td></tr>
+        <tr><th>Lead webhook</th><td>{% if lead_webhook_enabled %}<span class="badge ok">Active</span> POST /api/leads{% else %}<span class="muted">Set LEAD_WEBHOOK_SECRET</span>{% endif %}</td></tr>
+        <tr><th>Google Sheets sync</th><td>{% if sheets_sync_enabled %}<span class="badge ok">Active</span>{% else %}<span class="muted">Set GOOGLE_SHEETS_WEBHOOK_URL</span>{% endif %}</td></tr>
+        <tr><th>Security</th><td>{% if production_mode %}Production cookies + headers{% else %}Development mode{% endif %}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card settings-test-card">
+    <h2 class="analytics-heading">Live status</h2>
+    <ul class="settings-checklist">
+      <li>
+        <span>Database</span>
+        {% if db_connected %}<span class="badge ok">connected</span>{% else %}<span class="badge lost">unavailable</span>{% endif %}
+      </li>
+      <li>
+        <span>Daily cron secret</span>
+        {% if cron_configured %}<span class="badge ok">configured</span>{% else %}<span class="badge lost">missing</span>{% endif %}
+      </li>
+      <li>
+        <span>Health endpoint</span>
+        <a class="btn" href="/health" target="_blank" rel="noopener">Open /health</a>
+      </li>
+    </ul>
+    <p class="muted" style="margin-top:1rem">UptimeRobot: ping <code>{{ app_base_url }}/health</code> every 5 minutes (HEAD or GET).</p>
+  </div>
+
+  {% if lead_webhook_enabled %}
+  <div class="card settings-test-card">
+    <h2 class="analytics-heading">Test lead webhook</h2>
+    <p class="muted">Run from terminal (replace secret if needed):</p>
+    <pre class="code-block"><code>curl -X POST "{{ app_base_url }}/api/leads" \
+  -H "Content-Type: application/json" \
+  -H "X-Lead-Webhook-Secret: YOUR_LEAD_WEBHOOK_SECRET" \
+  -d '{"name":"Test Lead","phone":"9999999999","source":"settings-test"}'</code></pre>
+    <p class="muted">Success returns <code>{"status":"ok","lead_id":…}</code> and notifies owners on WhatsApp.</p>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

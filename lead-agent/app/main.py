@@ -14,8 +14,9 @@ from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -28,7 +29,7 @@ from app.agent import handle_message
 from app.api.leads import router as api_leads_router
 from app.logging_config import configure_logging
 from app.security.headers import SecurityHeadersMiddleware
-from app.summary import send_daily_summaries
+from app.media import transcribe_whatsapp_audio
 from app.whatsapp import send_whatsapp_reply, verify_webhook
 
 load_dotenv()
@@ -88,8 +89,8 @@ def _verify_meta_signature(raw_body: bytes, signature_header: str | None) -> boo
     return hmac.compare_digest(digest, expected)
 
 
-def _extract_incoming_text_message(payload: dict[str, Any]) -> tuple[str, str] | None:
-    """Return (owner_phone, message_text) for the first inbound text message."""
+def _extract_incoming_message(payload: dict[str, Any]) -> tuple[str, str | None, str | None] | None:
+    """Return (owner_phone, text_body, audio_media_id) for the first inbound message."""
     try:
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
@@ -99,29 +100,70 @@ def _extract_incoming_text_message(payload: dict[str, Any]) -> tuple[str, str] |
                     continue
 
                 message = messages[0]
-                if message.get("type") != "text":
-                    return None
-
-                body = (message.get("text") or {}).get("body")
                 sender = message.get("from")
-                if sender and body:
-                    return str(sender), str(body)
+                if not sender:
+                    continue
+
+                msg_type = message.get("type")
+                if msg_type == "text":
+                    body = (message.get("text") or {}).get("body")
+                    if body:
+                        return str(sender), str(body), None
+                elif msg_type == "audio":
+                    media_id = (message.get("audio") or {}).get("id")
+                    if media_id:
+                        return str(sender), None, str(media_id)
     except (AttributeError, TypeError, KeyError, IndexError):
         logger.exception("Failed to parse webhook payload")
 
     return None
 
 
-async def _process_incoming_message(owner_phone: str, message_text: str) -> None:
+async def _process_incoming_message(
+    owner_phone: str,
+    message_text: str | None = None,
+    audio_media_id: str | None = None,
+) -> None:
     """Handle agent loop + outbound WhatsApp reply (runs after webhook ack)."""
     try:
+        text = message_text
+        if audio_media_id:
+            logger.info("Transcribing voice note from owner %s", owner_phone)
+            text = await transcribe_whatsapp_audio(audio_media_id)
+            if not text:
+                await send_whatsapp_reply(
+                    owner_phone,
+                    "Sorry, I couldn't understand that voice note. Please try again or type your message.",
+                )
+                return
+            logger.info("Voice note transcribed for %s: %s", owner_phone, text[:120])
+
+        if not text:
+            return
+
         logger.info("Processing message from owner %s", owner_phone)
-        reply = await handle_message(owner_phone, message_text)
+        reply = await handle_message(owner_phone, text)
         sent = await send_whatsapp_reply(owner_phone, reply)
         if not sent:
             logger.error("Failed to send WhatsApp reply to owner %s", owner_phone)
     except Exception:
         logger.exception("Error handling webhook message from %s", owner_phone)
+
+
+_public_templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+
+@app.get("/", response_class=HTMLResponse)
+async def landing_page(request: Request) -> HTMLResponse:
+    """Public landing — health snapshot + links to admin demo."""
+    return _public_templates.TemplateResponse(
+        request,
+        "landing.html",
+        {
+            "health": health(),
+            "app_version": app.version,
+        },
+    )
 
 
 @app.head("/health")
@@ -194,11 +236,16 @@ async def webhook_receive(request: Request, background_tasks: BackgroundTasks) -
         logger.exception("Webhook received invalid JSON body")
         return Response(status_code=200)
 
-    extracted = _extract_incoming_text_message(payload)
+    extracted = _extract_incoming_message(payload)
     if extracted is None:
         return Response(status_code=200)
 
-    owner_phone, message_text = extracted
+    owner_phone, message_text, audio_media_id = extracted
     logger.info("Webhook accepted message from %s", owner_phone)
-    background_tasks.add_task(_process_incoming_message, owner_phone, message_text)
+    background_tasks.add_task(
+        _process_incoming_message,
+        owner_phone,
+        message_text,
+        audio_media_id,
+    )
     return Response(status_code=200)

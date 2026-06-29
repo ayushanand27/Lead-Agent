@@ -19,9 +19,14 @@
     <div class="card-label">Converted</div>
     <div class="card-value">{{ stats.by_status.get('converted', 0) }}</div>
   </div>
+  <div class="card">
+    <div class="card-label">Conversion rate</div>
+    <div class="card-value">{{ conversion_rate }}%</div>
+  </div>
 </div>
 <div class="toolbar">
   <a class="btn btn-primary" href="/admin/leads">View all leads</a>
+  <a class="btn" href="/admin/analytics">Analytics</a>
   <a class="btn" href="/admin/leads/export">Export CSV</a>
 </div>
 {% if recent_activity %}

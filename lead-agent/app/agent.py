@@ -36,6 +36,19 @@ GENERIC_ERROR_REPLY = (
     "Sorry, I'm having trouble right now. Please try again in a moment."
 )
 CANCELLED_PREFIX = "Previous action cancelled. Processing your new request...\n\n"
+WELCOME_REPLY = (
+    "Hi! I'm LeadAgent — your WhatsApp lead assistant.\n\n"
+    "Try:\n"
+    "• list all my leads\n"
+    "• 2 din se contact nahi hua kaun?\n"
+    "• add lead Rahul phone 9876543210 from website\n"
+    "• search Priya\n"
+    "• mark Rahul as warm\n\n"
+    "Hindi ya English — jo aapko easy lage."
+)
+_GREETINGS = frozenset({
+    "hi", "hello", "hey", "hii", "hiii", "yo", "namaste", "start", "help",
+})
 MAX_AGENT_ITERATIONS = 8
 
 # OpenAI-compatible tool schemas (owner_phone is injected server-side, not by the model)
@@ -850,6 +863,9 @@ async def handle_message(owner_phone: str, message_text: str) -> str:
 
     if not is_registered_owner(owner_phone):
         return "This number is not registered for this business account. Please contact your administrator."
+
+    if text.lower() in _GREETINGS:
+        return WELCOME_REPLY
 
     pending = pending_store.get_pending(owner_phone)
     if pending is not None:
