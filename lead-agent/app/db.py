@@ -343,6 +343,7 @@ def fetch_stale_leads(owner_phone: str, days_since_contact: int) -> list[dict]:
 
 def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
     pattern = f"%{query_text.strip()}%"
+    like_op = "ILIKE" if _use_postgres() else "LIKE"
     if _use_postgres():
         notes_expr = "COALESCE(notes, '')"
         tags_expr = "COALESCE(tags, '')"
@@ -357,11 +358,11 @@ def search_leads_for_owner(owner_phone: str, query_text: str) -> list[dict]:
         FROM leads
         WHERE {scope_clause}
           AND (
-                name LIKE %s
-                OR phone LIKE %s
-                OR source LIKE %s
-                OR {notes_expr} LIKE %s
-                OR {tags_expr} LIKE %s
+                name {like_op} %s
+                OR phone {like_op} %s
+                OR source {like_op} %s
+                OR {notes_expr} {like_op} %s
+                OR {tags_expr} {like_op} %s
               )
         ORDER BY created_at DESC
         """

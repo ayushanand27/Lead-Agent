@@ -632,6 +632,121 @@ def _user_wants_outbound_message(text: str) -> bool:
     return any(k in lower for k in keywords)
 
 
+_SEARCH_INTENT_WORDS = (
+    "search",
+    "find",
+    "lookup",
+    "dhoondo",
+    "dhundho",
+    "dhundo",
+    "khojo",
+    "khoj",
+)
+
+_VOICE_NAME_SKIP_WORDS = frozenset({
+    "yes", "no", "ok", "okay", "hi", "hello", "hey", "thanks", "thank", "please",
+    "list", "add", "mark", "send", "the", "a", "an", "my", "all", "leads", "lead",
+    "who", "what", "when", "how", "stale", "converted", "lost", "warm", "hot", "new",
+})
+
+_SEARCH_BLOCK_PHRASES = (
+    "add lead",
+    "create lead",
+    "list all",
+    "mark ",
+    "haven't i contacted",
+    "contact nahi",
+)
+
+
+def _has_search_intent(text: str) -> bool:
+    lower = text.lower()
+    return any(word in lower for word in _SEARCH_INTENT_WORDS)
+
+
+def _extract_search_query(message_text: str, *, voice: bool = False) -> str | None:
+    """Pull a searchable name/keyword from chat or voice transcripts."""
+    text = message_text.strip()
+    if not text:
+        return None
+
+    normalized = re.sub(r"[^\w\s\-'.]", " ", text)
+    normalized = " ".join(normalized.split())
+    lower = normalized.lower()
+
+    prefix_patterns = (
+        r"^search(?:\s+for)?\s+(.+)$",
+        r"^find(?:\s+lead)?\s+(.+)$",
+        r"^lookup\s+(.+)$",
+        r"^show(?:\s+me)?(?:\s+lead)?\s+(.+)$",
+        r"^get(?:\s+lead)?\s+(.+)$",
+        r"^(?:dhoondo|dhundho|dhundo|khojo|khoj)\s+(.+)$",
+        r"^(.+?)\s+(?:ko\s+)?(?:dhoondo|dhundho|dhundo|khojo)$",
+        r"^(.+?)\s+ki\s+search$",
+    )
+    for pattern in prefix_patterns:
+        match = re.match(pattern, lower, re.IGNORECASE)
+        if match:
+            query = match.group(1).strip(" .,!?:;")
+            if query:
+                return query
+
+    latin_tokens = re.findall(r"[A-Za-z]{2,}", normalized)
+    if latin_tokens:
+        if _has_search_intent(lower):
+            if latin_tokens[0].lower() in {"search", "find", "lookup", "show", "get"}:
+                latin_tokens = latin_tokens[1:]
+            if latin_tokens:
+                return " ".join(latin_tokens)
+        if voice and len(latin_tokens) <= 3:
+            if latin_tokens[0].lower() not in _VOICE_NAME_SKIP_WORDS:
+                return " ".join(latin_tokens)
+
+    return None
+
+
+def _format_search_results(result: dict) -> str:
+    if not result.get("success"):
+        return "Search failed. Please try again in a moment."
+
+    data = result["data"]
+    count = int(data.get("count", 0))
+    query = data.get("query", "")
+    if count == 0:
+        return f'No leads found for "{query}".'
+
+    lines = [f'Found {count} lead(s) for "{query}":']
+    for lead in data.get("leads", [])[:10]:
+        lines.append(
+            f"• {lead['name']} — {lead['phone']} ({lead['status']}, {lead['source']})"
+        )
+    if count > 10:
+        lines.append(f"...and {count - 10} more.")
+    return "\n".join(lines)
+
+
+def _try_search_fast_path(
+    owner_phone: str,
+    message_text: str,
+    *,
+    voice: bool = False,
+) -> str | None:
+    """Direct DB search — reliable for voice transcripts and short name lookups."""
+    lower = message_text.lower()
+    if any(phrase in lower for phrase in _SEARCH_BLOCK_PHRASES):
+        return None
+
+    query = _extract_search_query(message_text, voice=voice)
+    if not query:
+        return None
+
+    if not voice and not _has_search_intent(lower) and len(query.split()) > 2:
+        return None
+
+    result = lead_service.search_leads(owner_phone, query)
+    return _format_search_results(result)
+
+
 def _remember_lead_from_tool_result(
     tool_name: str, tool_output: str, last_lead: dict | None
 ) -> dict | None:
@@ -868,7 +983,12 @@ async def _run_agent_loop(owner_phone: str, message_text: str) -> str:
         return GENERIC_ERROR_REPLY
 
 
-async def handle_message(owner_phone: str, message_text: str) -> str:
+async def handle_message(
+    owner_phone: str,
+    message_text: str,
+    *,
+    from_voice: bool = False,
+) -> str:
     """
     Process an incoming WhatsApp message from a business owner.
     Returns plain-text reply to send back on WhatsApp.
@@ -897,6 +1017,10 @@ async def handle_message(owner_phone: str, message_text: str) -> str:
     fast_path = _try_send_followup_fast_path(owner_phone, text)
     if fast_path is not None:
         return fast_path
+
+    search_path = _try_search_fast_path(owner_phone, text, voice=from_voice)
+    if search_path is not None:
+        return search_path
 
     return await _run_agent_loop(owner_phone, text)
 

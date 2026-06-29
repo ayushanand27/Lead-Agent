@@ -1,162 +1,249 @@
-# LeadAgent — Demo Script / Website Flow
+# LeadAgent — OBS Demo Script (English)
 
-Ye file public rakh sakte ho. Isme sirf product ka simple flow explain hai, koi secret ya sensitive info nahi.
-
-Language intentionally easy Hindi + English me rakhi gayi hai, taaki tech aur non-tech dono samajh saken.
-
-## Website flow in simple words
-
-LeadAgent ka basic flow bahut simple hai:
-
-1. User WhatsApp pe bot ko message karta hai
-2. Bot message samajh ke database se lead data read ya update karta hai
-3. Same data dashboard me table form me dikh jaata hai
-4. Agar Google Sheets sync on hai, to sheet bhi update hoti hai
-5. Daily summary cron se WhatsApp pe aa sakti hai
-
-Short version:
-
-`WhatsApp -> backend -> database -> dashboard / sheet -> back to WhatsApp`
+> **How to use:** Turn on OBS screen recording. Read exactly what’s under **SAY**. Do what’s under **SCREEN** / **ACTION**.  
+> Duration: ~3–4 min · Upload to Google Drive → post link on LinkedIn / X · Repo stays private.
 
 ---
 
-## Short explanation for README / website
+## Before you record (5 min)
 
-> LeadAgent ek WhatsApp-based lead management product hai.  
-> Aap bot ko normal chat ki tarah message karte ho, aur bot leads ko list, search, update, aur manage karta hai.  
-> Same data dashboard me table form me dikhta hai, aur optionally Google Sheets me bhi sync hota hai.  
-> Isse leads manually track karna easy ho jaata hai.
+| # | Task |
+|---|------|
+| 1 | Open WhatsApp Web — chat with your business number ready |
+| 2 | Admin: `https://lead-agent-to63.onrender.com/admin/login` |
+| 3 | Google Sheet (LeadAgent Backup) in another tab |
+| 4 | Keep 0–2 test leads for a clean demo |
+| 5 | Silence phone notifications |
+| 6 | OBS: Window or Display capture (WhatsApp + browser) |
+| 7 | Mic check — say one line, listen back |
 
----
-
-## Full demo voice script
-
-Approx duration: 2.5 to 3 minutes  
-Record order: WhatsApp -> Admin Dashboard -> Google Sheet -> optional health page
-
-## Opening
-
-> "Hi, maine LeadAgent build kiya hai. Ye ek WhatsApp-based lead management product hai.  
-> Simple idea ye hai ki agar aap leads WhatsApp pe handle karte ho, to unhe manually yaad rakhna ya alag Excel maintain karna mushkil hota hai.  
-> LeadAgent me aap bot ko message karte ho, aur bot leads ko manage karta hai.  
-> Saath me ek dashboard bhi hai jahan sab data clean table form me dikh jaata hai."
+**Tip:** Keep this script on a second screen. Don’t read from paper on camera.
 
 ---
 
-## Part 1 — WhatsApp bot
+## LinkedIn / X caption (after upload)
 
-### 1. Start with hi
+```
+WhatsApp leads don’t fail because teams don’t care.
+They fail because follow-up is manual.
 
-**Type:** `hi`
+I built LeadAgent — a WhatsApp bot that manages leads like a team member.
 
-> "Sabse pehle normal hi bhejte hain. Bot turant reply karta hai, so conversation natural lagti hai."
+• Chat to add / search / update leads
+• Voice notes supported
+• Admin dashboard + Google Sheets sync
+• Daily morning summary
 
-### 2. List all leads
+3-min demo: [VIDEO_LINK]
 
-**Type:** `list all my leads`
-
-> "Ab bot database se saari leads nikaal ke ek hi message me dikhata hai.  
-> Yahan name, phone, source, aur status sab ek jagah mil jaata hai."
-
-### 3. Add a new lead
-
-**Type:**
-```text
-add lead Rahul Sharma phone 9876543210 from website
+Repo is private. DM me if you want to explore this.
 ```
 
-> "Ab main chat se hi ek naya lead add kar raha hoon.  
-> Name, phone, aur source ek single message me diya, aur lead database me save ho jaayegi."
+---
 
-### 4. Check stale leads
-
-**Type:** `2 din se contact nahi hua kaun?`
-
-> "Ab bot batata hai ki kaun si leads pe follow-up pending hai.  
-> Isse koi important lead miss nahi hoti."
-
-### 5. Safe confirmation
-
-**Type:** `mark Rahul Sharma as converted`
-
-> "Agar main koi important status change karta hoon, jaise converted ya lost, to bot pehle confirmation maangta hai.  
-> Isse galat update hone ka risk kam ho jaata hai."
-
-**Type:** `NO`
-
-> "Main abhi NO bol raha hoon, taaki demo safe rahe."
+## VIDEO SCRIPT — start recording here
 
 ---
 
-## Part 2 — Admin dashboard
+### SCENE 0 — Hook (15 sec)
 
-**Open:** `https://lead-agent-to63.onrender.com/admin/login`
+**SCREEN:** Empty WhatsApp chat or landing page `https://lead-agent-to63.onrender.com/`
 
-> "WhatsApp ke alawa ek admin dashboard bhi hai.  
-> Yahan login karke lead data aur clearly dekh sakte ho."
+**SAY:**
 
-### Dashboard page
-
-> "Dashboard pe total leads, stale leads, aur important summary ek glance me milti hai."
-
-### Leads page
-
-> "Leads page me poori table hoti hai.  
-> Search kar sakte ho, filter laga sakte ho, aur CSV export bhi kar sakte ho."
-
-### Edit lead
-
-> "Edit button pe click karke lead ka status, tags, aur notes update kar sakte ho.  
-> Save karte hi data database me update ho jaata hai."
+> "If you run leads on WhatsApp — real estate, coaching, trading, any SMB — you know this problem: leads come in, but follow-up gets missed. Notes stay in chat, Excel is separate, and nobody knows who still needs a call.  
+> I built **LeadAgent** for that — a WhatsApp bot that manages your leads, like a team member."
 
 ---
 
-## Part 3 — Google Sheet
+### SCENE 1 — WhatsApp: first chat (45 sec)
 
-**Open:** LeadAgent Backup sheet
+**SCREEN:** WhatsApp Web — your business chat
 
-> "Agar Google Sheets sync enabled hai, to same lead yahan bhi update hoti hai.  
-> Nayi duplicate row nahi banti, same lead update hoti hai."
+**ACTION 1:** Type → `Hi`
 
-> "Jo log spreadsheet me kaam karna pasand karte hain, unke liye ye useful backup hai."
+**SAY:**
 
----
+> "First I send a simple **Hi**. The bot replies instantly with what it can do — list leads, search, add leads, stale follow-ups — in Hindi or English, whatever’s easier."
 
-## Part 4 — How it works behind the scenes
+*(Pause so viewers can read the cheat-sheet reply)*
 
-> "Backend me FastAPI server hai, database Supabase Postgres hai, aur AI Groq use karta hai taaki messages samajh sake.  
-> WhatsApp integration official Meta API se connected hai.  
-> Isliye chat, dashboard, aur sheet — teeno same data pe kaam karte hain."
+**ACTION 2:** Type → `list all my leads`
 
----
+**SAY:**
 
-## Closing
-
-> "To overall LeadAgent ka flow simple hai:  
-> WhatsApp pe bot se baat karo, dashboard me leads dekho, aur sheet me backup rakho.  
-> Ye product lead management ko simple aur organized bana deta hai."
+> "Now I say **list all my leads**. The bot pulls everything from the database in one message — name, phone, source, status — all in one place."
 
 ---
 
-## Quick action sequence for recording
+### SCENE 2 — Add lead + natural language (50 sec)
 
-| Step | Action |
-|------|--------|
-| 1 | Open WhatsApp and type `hi` |
-| 2 | Type `list all my leads` |
-| 3 | Type `add lead Rahul Sharma phone 9876543210 from website` |
-| 4 | Type `2 din se contact nahi hua kaun?` |
-| 5 | Type `mark Rahul Sharma as converted` then `NO` |
-| 6 | Open admin dashboard |
-| 7 | Show Leads table and Edit screen |
-| 8 | Open Google Sheet |
-| 9 | Optional: open `/health` |
+**ACTION:** Type →
+```text
+add lead Priya Mehta phone 9876543210 from LinkedIn
+```
+
+**SAY:**
+
+> "Adding a lead is just chat. One line — name, phone, source. This one came from **LinkedIn**. It saves instantly and shows up in the list."
+
+*(Wait for reply)*
+
+**ACTION:** Type → `who haven't I contacted in 2 days?`
+
+**SAY:**
+
+> "You can ask in plain language — who haven’t I contacted in two days? The bot understands and shows leads that need follow-up. Nothing important gets missed."
 
 ---
 
-## Google Sheet cleanup reminder
+### SCENE 3 — Voice note (30 sec) — optional but strong
 
-1. Open **LeadAgent Backup**
-2. Row 1 headers rehne do
-3. Rows 2 onward delete
-4. Fresh demo start karo
+**SCREEN:** WhatsApp — record a voice note
+
+**ACTION:** Say clearly: *"search Priya"*
+
+**SAY:**
+
+> "You don’t have to type — **voice notes** work too. I say search Priya, it transcribes and finds the lead. Useful when you’re on the move."
+
+*(Skip this scene if voice fails — rest of demo is enough)*
+
+---
+
+### SCENE 4 — Safe confirmation (35 sec)
+
+**ACTION:** Type → `mark Priya Mehta as converted`
+
+**SAY:**
+
+> "For important changes — like marking converted or lost — the bot asks for **confirmation** first. Less risk of accidental updates."
+
+*(Bot asks YES/NO)*
+
+**ACTION:** Type → `NO`
+
+**SAY:**
+
+> "For the demo I’ll say **NO**. In real use, you’d say YES and it updates."
+
+---
+
+### SCENE 5 — Admin dashboard (60 sec)
+
+**SCREEN:** Browser → admin login → dashboard
+
+**SAY:**
+
+> "There’s also an **admin dashboard**. Clean table view — phone numbers masked for privacy."
+
+**ACTION:** Show dashboard
+
+**SAY:**
+
+> "Total leads, stale count, and **conversion rate** at a glance."
+
+**ACTION:** Sidebar → **Leads** — show search / filters
+
+**SAY:**
+
+> "Search, status filter, source filter, CSV export — all here."
+
+**ACTION:** Click **Edit** on a lead (optional save)
+
+**SAY:**
+
+> "Edit status, tags, notes — save once, database updates, and Google Sheets syncs if enabled."
+
+**ACTION:** Sidebar → **Analytics** (~10 sec)
+
+**SAY:**
+
+> "Analytics shows trends — how many leads came in, conversions, and which sources perform best."
+
+---
+
+### SCENE 6 — Google Sheet (25 sec)
+
+**SCREEN:** Google Sheet tab
+
+**SAY:**
+
+> "For teams that live in **spreadsheets** — there’s backup sync. No duplicate rows — same lead updates by ID."
+
+*(Show 1–2 rows)*
+
+---
+
+### SCENE 7 — Webhook + daily summary (25 sec)
+
+**SCREEN:** Settings page or stay on dashboard
+
+**SAY:**
+
+> "Leads from your website or IndiaMART can hit a **webhook** — straight into the system, with optional WhatsApp alerts to owners. And every morning at **9 AM**, an automatic summary of who needs follow-up."
+
+---
+
+### SCENE 8 — Closing + CTA (30 sec)
+
+**SCREEN:** Landing page or dashboard — hold calm
+
+**SAY:**
+
+> "So that’s **LeadAgent** — chat on WhatsApp, view on dashboard, backup in Sheets.  
+> AI under the hood, but it feels like normal messaging — no app install, no training.  
+> Code is **private**, but if this fits your business, **DM me on LinkedIn or X** — happy to walk through a live demo. Thanks!"
+
+**SCREEN:** Hold 2 seconds → stop OBS.
+
+---
+
+## Action cheat sheet (recording order)
+
+| # | Action |
+|---|--------|
+| 1 | WhatsApp → `Hi` |
+| 2 | `list all my leads` |
+| 3 | `add lead Priya Mehta phone 9876543210 from LinkedIn` |
+| 4 | `who haven't I contacted in 2 days?` |
+| 5 | Voice: "search Priya" *(optional)* |
+| 6 | `mark Priya Mehta as converted` → `NO` |
+| 7 | Admin → Dashboard |
+| 8 | Leads → filter → Edit |
+| 9 | Analytics |
+| 10 | Google Sheet |
+| 11 | Closing + CTA |
+
+---
+
+## OBS settings
+
+| Setting | Value |
+|---------|--------|
+| Resolution | 1920×1080 or 1280×720 |
+| FPS | 30 |
+| Format | MP4 |
+| Target length | 3–4 min |
+
+**Google Drive:** “Anyone with the link can view” → paste link in post.
+
+---
+
+## If something goes wrong
+
+| Issue | Fix |
+|-------|-----|
+| Slow bot reply | Wait 3–5 sec — don’t cut, looks natural |
+| Typo in chat | Re-record from `Hi` |
+| Empty sheet | Admin → “Sync all to Google Sheets” once |
+| Voice fails | Skip Scene 3 |
+| Render asleep | Open `/health` first, then record |
+
+---
+
+## Optional: clean data before demo
+
+1. Google Sheet — keep header row, delete data rows  
+2. Clear test leads in admin if you want a fresh start  
+3. Run the script sequence — Priya lead will appear as new

@@ -142,7 +142,7 @@ async def _process_incoming_message(
             return
 
         logger.info("Processing message from owner %s", owner_phone)
-        reply = await handle_message(owner_phone, text)
+        reply = await handle_message(owner_phone, text, from_voice=bool(audio_media_id))
         sent = await send_whatsapp_reply(owner_phone, reply)
         if not sent:
             logger.error("Failed to send WhatsApp reply to owner %s", owner_phone)
