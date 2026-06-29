@@ -8,8 +8,8 @@
     <tbody>
       <tr><th>Business name</th><td>{{ business_name }}</td></tr>
       <tr><th>Industry</th><td>{{ industry }}</td></tr>
-      <tr><th>Owner phone</th><td>{{ owner_phone }}</td></tr>
-      <tr><th>Registered owners</th><td>{{ owner_phones_display }}</td></tr>
+      <tr><th>Owner account</th><td class="muted">Signed in</td></tr>
+      <tr><th>Registered owners</th><td class="muted">{{ owner_phones_display }}</td></tr>
       <tr><th>WhatsApp bot</th><td class="muted">Message your business WhatsApp number</td></tr>
       <tr><th>Daily summary</th><td class="muted">POST /internal/cron/daily-summary (cron secret)</td></tr>
       <tr><th>Lead webhook</th><td>{% if lead_webhook_enabled %}<span class="badge ok">Active</span> POST /api/leads{% else %}<span class="muted">Set LEAD_WEBHOOK_SECRET</span>{% endif %}</td></tr>

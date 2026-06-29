@@ -301,10 +301,14 @@ async def settings_page(request: Request) -> HTMLResponse:
     if not get_session_owner(request):
         return _redirect_login()
     phones = get_owner_phones()
+    if phones:
+        owners_label = f"{len(phones)} account{'s' if len(phones) != 1 else ''} configured"
+    else:
+        owners_label = "Any WhatsApp number"
     ctx = dashboard_context(
         request,
         active_page="settings",
-        owner_phones_display=", ".join(phones) if phones else "(any WhatsApp number)",
+        owner_phones_display=owners_label,
         sheets_sync_enabled=bool(os.getenv("GOOGLE_SHEETS_WEBHOOK_URL", "").strip()),
         lead_webhook_enabled=bool(os.getenv("LEAD_WEBHOOK_SECRET", "").strip()),
         production_mode=is_production(),
