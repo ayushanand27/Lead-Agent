@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from datetime import date, datetime
 from typing import Any
@@ -15,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 # GAS web apps rate-limit bursts — small pause between backfill rows
 _BACKFILL_DELAY_SECONDS = 0.35
+_GAS_TIMEOUT = httpx.Timeout(10.0, read=45.0)
+_MAX_ATTEMPTS = 2
+_RETRY_PAUSE_SECONDS = 2.0
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 def is_sheets_sync_enabled() -> bool:
@@ -30,43 +35,8 @@ def _json_safe(value: Any) -> str | int | float | bool:
     return value  # type: ignore[return-value]
 
 
-def _post_to_apps_script(client: httpx.Client, url: str, body: str) -> httpx.Response:
-    """
-    POST to Google Apps Script web app.
-
-    GAS runs doPost on the first POST, then returns 302 to a googleusercontent URL.
-    That redirect must be fetched with GET (POST there returns 405).
-    """
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "LeadAgent/1.2",
-    }
-    response = client.post(url, content=body, headers=headers, follow_redirects=False)
-    if response.status_code in (301, 302, 303):
-        location = response.headers.get("Location")
-        if location:
-            response = client.get(location, headers={"User-Agent": "LeadAgent/1.2"}, follow_redirects=False)
-    return response
-
-
-def _is_success_response(response: httpx.Response, original_post_status: int | None = None) -> bool:
-    if original_post_status in (301, 302, 303):
-        return True
-    if response.status_code < 400:
-        return True
-    return False
-
-
-def sync_lead_to_sheet(lead: dict) -> bool:
-    """
-    POST lead row to a Google Apps Script web app URL.
-    Returns True on success. Never raises — safe to call from agent/webhook paths.
-    """
-    url = os.getenv("GOOGLE_SHEETS_WEBHOOK_URL", "").strip()
-    if not url:
-        return False
-
-    payload = {
+def _lead_payload(lead: dict) -> dict[str, Any]:
+    return {
         "id": _json_safe(lead.get("id")),
         "name": _json_safe(lead.get("name")),
         "phone": _json_safe(lead.get("phone")),
@@ -81,43 +51,41 @@ def sync_lead_to_sheet(lead: dict) -> bool:
         "tags": _json_safe(lead.get("tags")),
     }
 
-    body = json.dumps(payload)
 
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            headers = {
-                "Content-Type": "application/json",
-                "User-Agent": "LeadAgent/1.2",
-            }
-            post_response = client.post(
-                url, content=body, headers=headers, follow_redirects=False
-            )
+def _post_success(post_status: int) -> bool:
+    """GAS runs doPost on POST; 302 redirect means the script executed."""
+    if post_status in _REDIRECT_STATUSES:
+        return True
+    return post_status < 400
+
+
+def sync_lead_to_sheet(lead: dict) -> bool:
+    """
+    POST lead row to a Google Apps Script web app URL.
+    Returns True on success. Never raises — safe to call from agent/webhook paths.
+    """
+    url = os.getenv("GOOGLE_SHEETS_WEBHOOK_URL", "").strip()
+    if not url:
+        return False
+
+    body = json.dumps(_lead_payload(lead))
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "LeadAgent/1.3",
+    }
+
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            with httpx.Client(timeout=_GAS_TIMEOUT) as client:
+                post_response = client.post(
+                    url,
+                    content=body,
+                    headers=headers,
+                    follow_redirects=False,
+                )
             post_status = post_response.status_code
 
-            if post_status in (301, 302, 303):
-                location = post_response.headers.get("Location")
-                if location:
-                    get_response = client.get(
-                        location,
-                        headers={"User-Agent": "LeadAgent/1.2"},
-                        follow_redirects=False,
-                    )
-                    if get_response.status_code < 400:
-                        logger.info(
-                            "Google Sheets sync ok for lead id=%s (POST %s → GET %s)",
-                            lead.get("id"),
-                            post_status,
-                            get_response.status_code,
-                        )
-                        return True
-                logger.info(
-                    "Google Sheets sync ok for lead id=%s (POST %s, GAS redirect)",
-                    lead.get("id"),
-                    post_status,
-                )
-                return True
-
-            if post_status < 400:
+            if _post_success(post_status):
                 logger.info(
                     "Google Sheets sync ok for lead id=%s (HTTP %s)",
                     lead.get("id"),
@@ -132,9 +100,37 @@ def sync_lead_to_sheet(lead: dict) -> bool:
                 post_response.text[:300],
             )
             return False
-    except Exception:
-        logger.exception("Google Sheets sync failed for lead id=%s", lead.get("id"))
-        return False
+        except (httpx.ReadTimeout, httpx.ConnectTimeout):
+            if attempt < _MAX_ATTEMPTS:
+                logger.warning(
+                    "Google Sheets sync timeout for lead id=%s (attempt %s/%s), retrying…",
+                    lead.get("id"),
+                    attempt,
+                    _MAX_ATTEMPTS,
+                )
+                time.sleep(_RETRY_PAUSE_SECONDS)
+                continue
+            logger.error(
+                "Google Sheets sync timed out for lead id=%s after %s attempts",
+                lead.get("id"),
+                _MAX_ATTEMPTS,
+            )
+            return False
+        except Exception:
+            logger.exception("Google Sheets sync failed for lead id=%s", lead.get("id"))
+            return False
+
+    return False
+
+
+def sync_lead_to_sheet_background(lead: dict) -> None:
+    """Fire-and-forget sheet sync — does not block HTTP or WhatsApp replies."""
+    threading.Thread(
+        target=sync_lead_to_sheet,
+        args=(lead,),
+        daemon=True,
+        name=f"sheets-sync-{lead.get('id')}",
+    ).start()
 
 
 def sync_all_leads_to_sheet(leads: list[dict]) -> tuple[int, int]:
@@ -149,3 +145,13 @@ def sync_all_leads_to_sheet(leads: list[dict]) -> tuple[int, int]:
         else:
             failed += 1
     return ok, failed
+
+
+def sync_all_leads_to_sheet_background(leads: list[dict]) -> None:
+    """Run full backfill without blocking the admin request."""
+    threading.Thread(
+        target=sync_all_leads_to_sheet,
+        args=(leads,),
+        daemon=True,
+        name="sheets-backfill",
+    ).start()

@@ -8,7 +8,7 @@ import httpx
 from groq import Groq
 
 from app import db
-from app.integrations.sheets import sync_lead_to_sheet
+from app.integrations.sheets import sync_lead_to_sheet_background
 from app.models import LEAD_STATUS_VALUES, LeadStatus
 
 GROQ_MODEL = "openai/gpt-oss-120b"
@@ -47,7 +47,7 @@ def _format_note_timestamp() -> str:
 def _sync_lead(owner_phone: str, lead_id: int) -> None:
     lead = db.fetch_lead_by_id(owner_phone, lead_id)
     if lead:
-        sync_lead_to_sheet(lead)
+        sync_lead_to_sheet_background(lead)
 
 
 def _normalize_whatsapp_recipient(phone: str) -> str:
