@@ -329,6 +329,18 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--border); ou
 .analytics-chart-card { min-height: 280px; }
 .analytics-heading { font-size: 0.9375rem; font-weight: 600; margin-bottom: 1rem; }
 
+.analytics-stat {
+  border-left: 3px solid var(--border);
+}
+.analytics-stat-total { border-left-color: #6366f1; }
+.analytics-stat-total .card-value { color: #a5b4fc; }
+.analytics-stat-active { border-left-color: #38bdf8; }
+.analytics-stat-active .card-value { color: #7dd3fc; }
+.analytics-stat-converted { border-left-color: #22c55e; }
+.analytics-stat-converted .card-value { color: #86efac; }
+.analytics-stat-rate { border-left-color: #f97316; }
+.analytics-stat-rate .card-value { color: #fdba74; }
+
 /* Settings */
 .settings-grid {
   display: grid;

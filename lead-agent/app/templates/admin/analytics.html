@@ -4,20 +4,20 @@
 {% block content %}
 <p class="muted" style="margin-bottom:1.5rem">Pipeline trends for the last {{ analytics.days }} days.</p>
 
-<div class="stats">
-  <div class="card">
+<div class="stats analytics-stats">
+  <div class="card analytics-stat analytics-stat-total">
     <div class="card-label">Total leads</div>
     <div class="card-value">{{ analytics.total }}</div>
   </div>
-  <div class="card">
+  <div class="card analytics-stat analytics-stat-active">
     <div class="card-label">Active</div>
     <div class="card-value">{{ analytics.active }}</div>
   </div>
-  <div class="card">
+  <div class="card analytics-stat analytics-stat-converted">
     <div class="card-label">Converted</div>
     <div class="card-value">{{ analytics.converted }}</div>
   </div>
-  <div class="card">
+  <div class="card analytics-stat analytics-stat-rate">
     <div class="card-label">Conversion rate</div>
     <div class="card-value">{{ analytics.conversion_rate }}%</div>
   </div>
@@ -52,20 +52,51 @@
   const statusData = {{ analytics.by_status | tojson }};
   const sourceData = {{ analytics.by_source | tojson }};
 
-  const gridColor = 'rgba(161, 161, 170, 0.15)';
+  const gridColor = 'rgba(161, 161, 170, 0.12)';
   const textColor = '#a1a1aa';
 
-  new Chart(document.getElementById('leadsChart'), {
+  const statusColors = {
+    new: '#60a5fa',
+    contacted: '#a78bfa',
+    warm: '#fbbf24',
+    hot: '#f97316',
+    converted: '#22c55e',
+    lost: '#ef4444',
+  };
+  const statusFallback = ['#6366f1', '#14b8a6', '#ec4899', '#eab308', '#84cc16', '#06b6d4'];
+
+  const sourcePalette = [
+    '#6366f1', '#22c55e', '#f97316', '#ec4899',
+    '#14b8a6', '#eab308', '#8b5cf6', '#06b6d4',
+  ];
+
+  function colorsForLabels(labels, map, fallback) {
+    return labels.map(function (label, i) {
+      return map[label] || fallback[i % fallback.length];
+    });
+  }
+
+  const lineCtx = document.getElementById('leadsChart').getContext('2d');
+  const lineGradient = lineCtx.createLinearGradient(0, 0, 0, 220);
+  lineGradient.addColorStop(0, 'rgba(99, 102, 241, 0.35)');
+  lineGradient.addColorStop(1, 'rgba(99, 102, 241, 0.02)');
+
+  new Chart(lineCtx, {
     type: 'line',
     data: {
       labels: dayLabels,
       datasets: [{
         label: 'New leads',
         data: dayCounts,
-        borderColor: '#fafafa',
-        backgroundColor: 'rgba(250, 250, 250, 0.08)',
+        borderColor: '#818cf8',
+        backgroundColor: lineGradient,
+        pointBackgroundColor: '#6366f1',
+        pointBorderColor: '#c7d2fe',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        pointHoverRadius: 7,
         fill: true,
-        tension: 0.3,
+        tension: 0.35,
       }],
     },
     options: {
@@ -78,30 +109,40 @@
     },
   });
 
+  const statusLabels = Object.keys(statusData);
   new Chart(document.getElementById('statusChart'), {
     type: 'doughnut',
     data: {
-      labels: Object.keys(statusData),
+      labels: statusLabels,
       datasets: [{
         data: Object.values(statusData),
-        backgroundColor: ['#fde047', '#fbbf24', '#86efac', '#fca5a5', '#a1a1aa', '#93c5fd'],
+        backgroundColor: colorsForLabels(statusLabels, statusColors, statusFallback),
+        borderColor: '#18181b',
+        borderWidth: 2,
+        hoverOffset: 6,
       }],
     },
     options: {
-      plugins: { legend: { position: 'bottom', labels: { color: textColor } } },
+      plugins: { legend: { position: 'bottom', labels: { color: textColor, padding: 14 } } },
     },
+  });
+
+  const sourceLabels = Object.keys(sourceData);
+  const sourceColors = sourceLabels.map(function (_, i) {
+    return sourcePalette[i % sourcePalette.length];
   });
 
   new Chart(document.getElementById('sourceChart'), {
     type: 'bar',
     data: {
-      labels: Object.keys(sourceData),
+      labels: sourceLabels,
       datasets: [{
         label: 'Leads',
         data: Object.values(sourceData),
-        backgroundColor: 'rgba(250, 250, 250, 0.35)',
-        borderColor: '#fafafa',
+        backgroundColor: sourceColors.map(function (c) { return c + 'cc'; }),
+        borderColor: sourceColors,
         borderWidth: 1,
+        borderRadius: 6,
       }],
     },
     options: {
