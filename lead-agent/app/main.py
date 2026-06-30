@@ -9,6 +9,7 @@ import logging
 import os
 import secrets
 import time
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -205,8 +206,25 @@ async def cron_daily_summary(request: Request) -> JSONResponse:
         provided = request.query_params.get("secret", "").strip()
     if not secret or not secrets.compare_digest(provided, secret):
         return JSONResponse(status_code=403, content={"error": "Forbidden"})
+
+    # Render free tier cold start — wait briefly for Postgres to become reachable.
+    for attempt in range(1, 7):
+        if db.check_connection():
+            break
+        logger.warning("Cron waiting for database (attempt %s/6)", attempt)
+        await asyncio.sleep(5)
+    else:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Database unavailable", "status": "retry"},
+        )
+
     result = await send_daily_summaries()
-    return JSONResponse(content={"status": "ok", **result})
+    body: dict[str, Any] = {"status": "ok", **result}
+    if result.get("failed"):
+        body["status"] = "partial"
+        logger.warning("Daily summary partial failure: %s", result)
+    return JSONResponse(content=body)
 
 
 @app.get("/webhook")

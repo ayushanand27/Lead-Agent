@@ -110,7 +110,9 @@ def main() -> None:
         )
 
     assert response.status_code == 200, response.text
-    mock_handle.assert_awaited_once_with("919111111111", "list all my leads")
+    mock_handle.assert_awaited_once_with(
+        "919111111111", "list all my leads", from_voice=False
+    )
     mock_send.assert_awaited_once_with("919111111111", "Here are your leads.")
     print("PASS: valid webhook returns 200 and routes to agent")
 

@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from app import db
 from app.config import get_business_name, get_owner_phones
 from app.whatsapp import send_whatsapp_reply
+
+logger = logging.getLogger(__name__)
+
+_MAX_SEND_ATTEMPTS = 2
+_RETRY_DELAY_SECONDS = 3
 
 
 def build_summary_text(owner_phone: str, stale_days: int = 2) -> str:
@@ -33,18 +41,37 @@ def build_summary_text(owner_phone: str, stale_days: int = 2) -> str:
     return "\n".join(lines)
 
 
-async def send_daily_summaries(stale_days: int = 2) -> dict[str, int]:
+async def _send_summary_to_owner(owner: str, text: str) -> bool:
+    for attempt in range(1, _MAX_SEND_ATTEMPTS + 1):
+        ok = await send_whatsapp_reply(owner, text)
+        if ok:
+            return True
+        if attempt < _MAX_SEND_ATTEMPTS:
+            logger.warning(
+                "Daily summary send failed for %s (attempt %s/%s), retrying…",
+                owner,
+                attempt,
+                _MAX_SEND_ATTEMPTS,
+            )
+            await asyncio.sleep(_RETRY_DELAY_SECONDS)
+    logger.error("Daily summary send failed for %s after %s attempts", owner, _MAX_SEND_ATTEMPTS)
+    return False
+
+
+async def send_daily_summaries(stale_days: int = 2) -> dict[str, int | list[str]]:
     owners = get_owner_phones()
     if not owners:
-        return {"sent": 0, "failed": 0}
+        return {"sent": 0, "failed": 0, "failed_owners": []}
 
     sent = 0
     failed = 0
+    failed_owners: list[str] = []
     for owner in owners:
         text = build_summary_text(owner, stale_days=stale_days)
-        ok = await send_whatsapp_reply(owner, text)
+        ok = await _send_summary_to_owner(owner, text)
         if ok:
             sent += 1
         else:
             failed += 1
-    return {"sent": sent, "failed": failed}
+            failed_owners.append(owner)
+    return {"sent": sent, "failed": failed, "failed_owners": failed_owners}
