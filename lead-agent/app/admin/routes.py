@@ -95,7 +95,9 @@ async def login_submit(
     if blocked:
         return blocked
 
-    normalized = owner_phone.strip().lstrip("+")
+    from app.utils.phone import normalize_owner_phone
+
+    normalized = normalize_owner_phone(owner_phone)
 
     if is_login_blocked(client_ip):
         log_admin_event(
@@ -111,12 +113,18 @@ async def login_submit(
 
     if not login_owner(request, owner_phone, password):
         record_login_failure(client_ip)
+        # Helpful without leaking which field failed to strangers on shared demos
+        allowed = get_owner_phones()
+        if allowed and normalized and normalized not in set(allowed):
+            hint = "Phone not registered. Use your WhatsApp number with country code (e.g. 91…)."
+        else:
+            hint = "Invalid phone or password. Check Render ADMIN_DASHBOARD_PASSWORD if it still fails."
         log_admin_event(
             normalized or "unknown",
             "admin_login_failed",
             f"Invalid credentials from {client_ip}",
         )
-        return _login_error(request, "Invalid phone or password.")
+        return _login_error(request, hint)
 
     clear_login_failures(client_ip)
     log_admin_event(normalized, "admin_login_success", f"Signed in from {client_ip}")

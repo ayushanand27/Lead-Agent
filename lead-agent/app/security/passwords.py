@@ -10,16 +10,26 @@ def verify_admin_password(plain: str, stored: str) -> bool:
     Verify password against env value.
     Supports bcrypt hashes ($2a$ / $2b$) or legacy plain text (backward compatible).
     """
-    if not stored:
+    if not stored or plain is None:
         return False
-    if stored.startswith("$2"):
+    # Accidental spaces from mobile keyboards / copy-paste
+    candidate = plain.strip()
+    expected = stored.strip()
+    # Render UI sometimes wraps values in quotes
+    if len(expected) >= 2 and expected[0] == expected[-1] and expected[0] in "\"'":
+        expected = expected[1:-1]
+
+    if expected.startswith("$2"):
         try:
             import bcrypt
 
-            return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
+            return bcrypt.checkpw(candidate.encode("utf-8"), expected.encode("utf-8"))
         except Exception:
             return False
-    return secrets.compare_digest(plain, stored)
+    try:
+        return secrets.compare_digest(candidate, expected)
+    except (TypeError, ValueError):
+        return False
 
 
 def hash_password(plain: str) -> str:

@@ -9,10 +9,13 @@ from fastapi import HTTPException, Request
 
 from app.config import get_owner_phones, is_registered_owner
 from app.security.passwords import verify_admin_password
+from app.utils.phone import normalize_owner_phone
 
 
 def get_admin_password() -> str | None:
     password = os.getenv("ADMIN_DASHBOARD_PASSWORD", "").strip()
+    if len(password) >= 2 and password[0] == password[-1] and password[0] in "\"'":
+        password = password[1:-1]
     return password or None
 
 
@@ -30,9 +33,11 @@ def login_owner(request: Request, owner_phone: str, password: str) -> bool:
         return False
     if not verify_admin_password(password, expected):
         return False
-    normalized = owner_phone.strip().lstrip("+")
+    normalized = normalize_owner_phone(owner_phone)
+    if not normalized:
+        return False
     allowed = get_owner_phones()
-    if allowed and normalized not in {p.lstrip("+") for p in allowed}:
+    if allowed and normalized not in set(allowed):
         return False
     request.session["owner_phone"] = normalized
     return True
@@ -46,9 +51,10 @@ def get_session_owner(request: Request) -> str | None:
     phone = request.session.get("owner_phone")
     if not phone:
         return None
-    if not is_registered_owner(str(phone)):
+    normalized = normalize_owner_phone(str(phone))
+    if not is_registered_owner(normalized):
         return None
-    return str(phone)
+    return normalized
 
 
 def require_owner(request: Request) -> str:

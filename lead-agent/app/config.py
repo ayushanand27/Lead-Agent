@@ -51,30 +51,35 @@ def get_industry() -> str:
 
 
 def get_owner_phones() -> list[str]:
+    from app.utils.phone import normalize_owner_phone
+
     raw = os.getenv("BUSINESS_OWNER_PHONES", "")
-    phones = [p.strip() for p in raw.split(",") if p.strip()]
-    return phones
+    phones = [normalize_owner_phone(p) for p in raw.split(",") if p.strip()]
+    return [p for p in phones if p]
 
 
 def is_registered_owner(phone: str) -> bool:
     """If BUSINESS_OWNER_PHONES is set, only those numbers may use the bot/dashboard."""
+    from app.utils.phone import normalize_owner_phone
+
     allowed = get_owner_phones()
     if not allowed:
         return True
-    normalized = phone.strip().lstrip("+")
-    return normalized in {p.lstrip("+") for p in allowed}
+    return normalize_owner_phone(phone) in set(allowed)
 
 
 def get_owner_scope(acting_phone: str) -> list[str]:
     """
     Phones whose leads are visible to the acting owner.
     Registered partners (all in BUSINESS_OWNER_PHONES) share one pool.
-  Unregistered numbers only see their own owner_phone rows.
+    Unregistered numbers only see their own owner_phone rows.
     """
+    from app.utils.phone import normalize_owner_phone
+
     allowed = get_owner_phones()
-    normalized = acting_phone.strip().lstrip("+")
+    normalized = normalize_owner_phone(acting_phone)
     if allowed:
-        allowed_set = sorted({p.strip().lstrip("+") for p in allowed if p.strip()})
+        allowed_set = sorted(set(allowed))
         if normalized in allowed_set:
             return allowed_set
         return [normalized] if normalized else []
@@ -85,7 +90,7 @@ def primary_owner_phone() -> str | None:
     phones = get_owner_phones()
     if not phones:
         return None
-    return phones[0].strip().lstrip("+")
+    return phones[0]
 
 
 def build_system_prompt() -> str:
