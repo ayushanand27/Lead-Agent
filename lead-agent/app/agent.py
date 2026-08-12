@@ -19,6 +19,7 @@ from app.models import (
     AddLeadNoteInput,
     AddLeadTagsInput,
     CreateLeadInput,
+    DeleteLeadInput,
     DraftFollowupMessageInput,
     GetLeadDetailsInput,
     GetStaleLeadsInput,
@@ -171,6 +172,20 @@ GROQ_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "delete_lead",
+            "description": "Permanently delete a lead and its notes/history. Cannot be undone.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lead_id": {"type": "integer"},
+                },
+                "required": ["lead_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "add_lead_note",
             "description": "Append a note to a lead.",
             "parameters": {
@@ -272,6 +287,10 @@ TOOL_REGISTRY: dict[str, tuple[type[BaseModel], ToolExecutor]] = {
             owner, args["lead_id"], args["new_status"]
         ),
     ),
+    "delete_lead": (
+        DeleteLeadInput,
+        lambda owner, args: lead_service.delete_lead(owner, args["lead_id"]),
+    ),
     "add_lead_note": (
         AddLeadNoteInput,
         lambda owner, args: lead_service.add_lead_note(
@@ -364,6 +383,7 @@ def validate_and_prepare_tool(
     if tool_name in {
         "get_lead_details",
         "update_lead_status",
+        "delete_lead",
         "add_lead_note",
         "add_lead_tags",
         "draft_followup_message",
@@ -531,6 +551,30 @@ def _build_send_confirmation(owner_phone: str, args: dict[str, Any]) -> str:
     )
 
 
+def _build_delete_confirmation(owner_phone: str, args: dict[str, Any]) -> str:
+    lead = lead_service.get_lead_details(owner_phone, args["lead_id"])
+    if not lead.get("success"):
+        return "I couldn't find that lead. Which lead do you mean? Please give me the name."
+
+    lead_data = lead["data"]["lead"]
+    name = lead_data["name"]
+    phone = lead_data["phone"]
+
+    pending_store.set_pending(
+        owner_phone,
+        {
+            "tool": "delete_lead",
+            "lead_id": args["lead_id"],
+            "lead_name": name,
+            "lead_phone": phone,
+        },
+    )
+    return (
+        f"This will permanently delete {name} ({phone}) and all its notes and history.\n\n"
+        "This cannot be undone. Reply YES to confirm, or tell me to cancel."
+    )
+
+
 def _build_status_confirmation(owner_phone: str, args: dict[str, Any]) -> str:
     lead = lead_service.get_lead_details(owner_phone, args["lead_id"])
     if not lead.get("success"):
@@ -648,6 +692,7 @@ _VOICE_NAME_SKIP_WORDS = frozenset({
     "yes", "no", "ok", "okay", "hi", "hello", "hey", "thanks", "thank", "please",
     "list", "add", "mark", "send", "the", "a", "an", "my", "all", "leads", "lead",
     "who", "what", "when", "how", "stale", "converted", "lost", "warm", "hot", "new",
+    "delete", "remove", "hata",
 })
 
 _SEARCH_BLOCK_PHRASES = (
@@ -657,6 +702,9 @@ _SEARCH_BLOCK_PHRASES = (
     "mark ",
     "haven't i contacted",
     "contact nahi",
+    "delete ",
+    "remove ",
+    "hata do",
 )
 
 
@@ -810,6 +858,15 @@ _STATUS_UPDATE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_DELETE_LEAD_RE = re.compile(
+    r"^(?:please\s+)?(?:delete|remove)\s+(?:the\s+)?(?:lead\s+)?(.+)",
+    re.IGNORECASE,
+)
+_DELETE_LEAD_HINDI_RE = re.compile(
+    r"^(.+?)\s+(?:ko\s+)?hata\s*do$",
+    re.IGNORECASE,
+)
+
 
 def _try_list_fast_path(owner_phone: str, message_text: str) -> str | None:
     lower = message_text.lower()
@@ -881,6 +938,36 @@ def _try_status_update_fast_path(owner_phone: str, message_text: str) -> str | N
     return result.get("error") or "Couldn't update that lead."
 
 
+def _try_delete_lead_fast_path(owner_phone: str, message_text: str) -> str | None:
+    text = message_text.strip()
+    match = _DELETE_LEAD_RE.search(text) or _DELETE_LEAD_HINDI_RE.search(text)
+    if not match:
+        return None
+
+    name_hint = match.group(1).strip(" .,!?:;")
+    if not name_hint:
+        return None
+
+    search = lead_service.search_leads(owner_phone, name_hint)
+    if not search.get("success") or search["data"]["count"] == 0:
+        return f'No lead found matching "{name_hint}".'
+
+    lead = search["data"]["leads"][0]
+    pending_store.set_pending(
+        owner_phone,
+        {
+            "tool": "delete_lead",
+            "lead_id": lead["id"],
+            "lead_name": lead["name"],
+            "lead_phone": lead["phone"],
+        },
+    )
+    return (
+        f"This will permanently delete {lead['name']} ({lead['phone']}) and all its notes and history.\n\n"
+        "This cannot be undone. Reply YES to confirm, or tell me to cancel."
+    )
+
+
 def _remember_lead_from_tool_result(
     tool_name: str, tool_output: str, last_lead: dict | None
 ) -> dict | None:
@@ -925,6 +1012,9 @@ def execute_validated_tool(
     if tool_name == "send_whatsapp_message" and requires_confirmation("send_whatsapp_message"):
         return _build_send_confirmation(owner_phone, args), True
 
+    if tool_name == "delete_lead" and requires_confirmation("delete_lead"):
+        return _build_delete_confirmation(owner_phone, args), True
+
     if tool_name == "update_lead_status" and requires_confirmation(
         "update_lead_status", new_status=args.get("new_status")
     ):
@@ -967,6 +1057,9 @@ def _format_pending_success(
         status = pending.get("new_status", "")
         return f"Done! {name} is now marked as {status}."
 
+    if tool == "delete_lead":
+        return f"Done! {name} has been permanently deleted."
+
     return "Done!"
 
 
@@ -986,6 +1079,9 @@ def _execute_pending_action(owner_phone: str, pending: dict[str, Any]) -> dict:
             pending["lead_id"],
             pending["new_status"],
         )
+
+    if tool == "delete_lead":
+        return lead_service.delete_lead(owner_phone, pending["lead_id"])
 
     return {"success": False, "error": "Unknown pending action"}
 
@@ -1169,6 +1265,10 @@ async def handle_message(
     status_path = _try_status_update_fast_path(owner_phone, text)
     if status_path is not None:
         return status_path
+
+    delete_path = _try_delete_lead_fast_path(owner_phone, text)
+    if delete_path is not None:
+        return delete_path
 
     search_path = _try_search_fast_path(owner_phone, text, voice=from_voice)
     if search_path is not None:

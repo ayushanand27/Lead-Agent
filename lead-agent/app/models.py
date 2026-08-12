@@ -95,6 +95,11 @@ class AddLeadTagsInput(BaseModel):
     )
 
 
+class DeleteLeadInput(BaseModel):
+    owner_phone: str = Field(..., description="WhatsApp number of the business owner")
+    lead_id: int = Field(..., ge=1, description="Lead primary key")
+
+
 class DraftFollowupMessageInput(BaseModel):
     owner_phone: str = Field(..., description="WhatsApp number of the business owner")
     lead_id: int = Field(..., ge=1, description="Lead primary key")

@@ -42,7 +42,7 @@ def is_confirmation_message(text: str) -> bool:
 
 def requires_confirmation(action: str, new_status: str | None = None) -> bool:
     """Return True if this action must wait for owner confirmation before executing."""
-    if action == "send_whatsapp_message":
+    if action in {"send_whatsapp_message", "delete_lead"}:
         return True
     if action == "update_lead_status" and new_status in TERMINAL_STATUSES:
         return True

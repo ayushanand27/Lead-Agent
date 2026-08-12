@@ -74,3 +74,30 @@ def test_voice_search_hindi_transcript(isolated_test_env):
         handle_message(owner, "प्रिया मित्तल", from_voice=True)
     )
     assert "Priya Mittal" in reply
+
+
+def test_demo_delete_lead_prompt(isolated_test_env):
+    owner = "919111111111"
+    _seed_priya(owner)
+    reply = asyncio.run(handle_message(owner, "delete Priya Mittal"))
+    assert "YES to confirm" in reply
+    assert "permanently delete" in reply.lower()
+    assert "Priya Mittal" in reply
+
+    # Not deleted yet — still present until the owner confirms.
+    leads = db.fetch_leads_for_owner(owner)
+    assert any(lead["name"] == "Priya Mittal" for lead in leads)
+
+
+def test_demo_delete_lead_confirmed(isolated_test_env):
+    owner = "919111111111"
+    _seed_priya(owner)
+    prompt = asyncio.run(handle_message(owner, "delete Priya Mittal"))
+    assert "YES to confirm" in prompt
+
+    confirmed = asyncio.run(handle_message(owner, "YES"))
+    assert "permanently deleted" in confirmed.lower()
+    assert "Priya Mittal" in confirmed
+
+    listing = asyncio.run(handle_message(owner, "list all my leads"))
+    assert "Priya Mittal" not in listing

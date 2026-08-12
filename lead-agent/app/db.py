@@ -633,6 +633,16 @@ def update_last_contacted_at(owner_phone: str, lead_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+def delete_lead(owner_phone: str, lead_id: int) -> bool:
+    scope_clause, scope_params = _scope_sql(owner_phone)
+    with get_connection() as conn:
+        cursor = conn.execute(
+            _q(f"DELETE FROM leads WHERE id = %s AND {scope_clause}"),
+            (lead_id, *scope_params),
+        )
+        return cursor.rowcount > 0
+
+
 def log_action(owner_phone: str, action: str, details: str) -> int:
     with get_connection() as conn:
         if _use_postgres():

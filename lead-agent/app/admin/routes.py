@@ -28,6 +28,7 @@ from app.integrations.sheets import (
 )
 from app.models import LEAD_STATUS_VALUES
 from app.security.audit import log_admin_event
+from app.security.csrf import verify_csrf_token
 from app.security.ip_allowlist import is_ip_allowed
 from app.security.rate_limit import (
     clear_login_failures,
@@ -132,8 +133,10 @@ async def login_submit(
 
 
 @router.post("/logout")
-async def logout(request: Request) -> RedirectResponse:
+async def logout(request: Request, csrf_token: str = Form(None)) -> RedirectResponse:
     owner = get_session_owner(request)
+    if owner and not verify_csrf_token(request, csrf_token):
+        return _redirect_login()
     if owner:
         log_admin_event(owner, "admin_logout", f"Signed out from {get_client_ip(request)}")
     logout_owner(request)
@@ -195,6 +198,7 @@ async def leads_page(
         statuses=STATUSES,
         sheets_sync_enabled=is_sheets_sync_enabled(),
         sync_message=request.query_params.get("sync"),
+        deleted=request.query_params.get("deleted"),
     )
     return templates.TemplateResponse(request, "admin/leads.html", ctx)
 
@@ -215,10 +219,12 @@ async def analytics_page(request: Request, days: int = 14) -> HTMLResponse:
 
 
 @router.post("/leads/sync-sheets", response_model=None)
-async def sync_leads_to_sheets(request: Request):
+async def sync_leads_to_sheets(request: Request, csrf_token: str = Form(None)):
     if not get_session_owner(request):
         return _redirect_login()
     owner = require_owner(request)
+    if not verify_csrf_token(request, csrf_token):
+        return RedirectResponse(url="/admin/leads", status_code=303)
     if not is_sheets_sync_enabled():
         return RedirectResponse(url="/admin/leads?sync=not_configured", status_code=303)
 
@@ -259,10 +265,13 @@ async def edit_lead_submit(
     status: str = Form(...),
     notes: str = Form(""),
     tags: str = Form(""),
+    csrf_token: str = Form(None),
 ):
     if not get_session_owner(request):
         return _redirect_login()
     owner = require_owner(request)
+    if not verify_csrf_token(request, csrf_token):
+        return RedirectResponse(url=f"/admin/leads/{lead_id}/edit", status_code=303)
     lead = db.fetch_lead_by_id(owner, lead_id)
     if not lead:
         return RedirectResponse(url="/admin/leads", status_code=303)
@@ -279,6 +288,34 @@ async def edit_lead_submit(
     )
     db.log_action(owner, "lead_updated", f"Dashboard edit lead id={lead_id} status={status}")
     updated = db.fetch_lead_by_id(owner, lead_id)
+    if updated:
+        sync_lead_to_sheet_background(updated)
+    return RedirectResponse(url="/admin/leads", status_code=303)
+
+
+@router.post("/leads/{lead_id}/delete", response_model=None)
+async def delete_lead_submit(
+    request: Request,
+    lead_id: int,
+    csrf_token: str = Form(None),
+):
+    if not get_session_owner(request):
+        return _redirect_login()
+    owner = require_owner(request)
+    if not verify_csrf_token(request, csrf_token):
+        return RedirectResponse(url=f"/admin/leads/{lead_id}/edit", status_code=303)
+
+    lead = db.fetch_lead_by_id(owner, lead_id)
+    if not lead:
+        return RedirectResponse(url="/admin/leads", status_code=303)
+
+    db.delete_lead(owner, lead_id)
+    db.log_action(
+        owner,
+        "lead_deleted",
+        f"Dashboard delete: '{lead['name']}' ({lead['phone']}, id={lead_id})",
+    )
+    return RedirectResponse(url="/admin/leads?deleted=1", status_code=303)
     if updated:
         sync_lead_to_sheet_background(updated)
     return RedirectResponse(url="/admin/leads", status_code=303)

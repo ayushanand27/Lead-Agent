@@ -53,7 +53,7 @@ Indian SMB owners manage sales leads over WhatsApp in plain English or Hindi. A 
 ## Architecture
 
 ```
-WhatsApp / Webhook  →  Render (FastAPI)  →  Groq agent  →  MCP tools (×10)  →  Supabase Postgres
+WhatsApp / Webhook  →  Render (FastAPI)  →  Groq agent  →  MCP tools (×11)  →  Supabase Postgres
         ↑                      │                                    │
    Meta Cloud API         /admin dashboard                    Google Sheets
    cron-job.org           lead webhook API                     (Apps Script)
@@ -90,11 +90,11 @@ uvicorn app.main:app --reload --port 8000
 **Demo hosting:** Render free tier is fine for portfolio + LinkedIn. Ping `/health` every 5 min ([UptimeRobot](https://uptimerobot.com)) or rely on daily cron to keep the service warm. **Paid clients** cover Render Starter (~$7/mo) in their setup fee.
 
 ---
-## Status (live demo — June 2026)
+## Status (verified 12 Aug 2026)
 
 | Feature | Status |
 |---------|--------|
-| MCP read/write tools (10) | ✅ |
+| MCP read/write tools (11, incl. `delete_lead`) | ✅ |
 | Groq agent + confirmation flow | ✅ |
 | WhatsApp webhook + HMAC validation | ✅ |
 | Multi-owner shared lead pool | ✅ |
@@ -106,7 +106,15 @@ uvicorn app.main:app --reload --port 8000
 | Supabase Postgres | ✅ |
 | Deployed on Render | ✅ |
 | Meta test sandbox (up to 5 recipients) | ✅ |
-| Automated test suite + CI | ✅ |
+| Automated test suite + CI | ✅ 67/67 checks passing locally (63 pytest + 4 script suites incl. live Groq agent loop) |
+| Optional Sarvam AI voice transcription (Indian languages) | ✅ opt-in, falls back to Groq Whisper |
+| Dashboard: delete a lead (not just via WhatsApp) | ✅ |
+| Delete a lead (WhatsApp + confirmation gate) | ✅ |
+| CSRF protection on authenticated admin forms | ✅ |
+| `POST /api/leads` rate limiting | ✅ |
+| Locked, reproducible dependency versions (`requirements-lock.txt`) | ✅ |
+
+Remaining known gap (tracked in [lead-agent/README.md § Security](lead-agent/README.md#security)): `ADMIN_DASHBOARD_PASSWORD` still accepts a legacy plain-text fallback for backward compatibility — the app now logs a startup warning when it's not a bcrypt hash, but doesn't refuse to boot, so existing deploys keep working while you migrate.
 
 ---
 ## License

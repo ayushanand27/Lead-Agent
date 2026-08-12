@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException, Request
 
 from app.config import get_owner_phones, is_registered_owner
+from app.security.csrf import get_csrf_token
 from app.security.passwords import verify_admin_password
 from app.utils.phone import normalize_owner_phone
 
@@ -73,5 +74,6 @@ def dashboard_context(request: Request, **extra: Any) -> dict[str, Any]:
         "business_name": get_business_name(),
         "industry": get_industry(),
         "owner_phone": owner,
+        "csrf_token": get_csrf_token(request),
         **extra,
     }

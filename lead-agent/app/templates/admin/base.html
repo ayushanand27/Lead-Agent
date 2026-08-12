@@ -25,6 +25,7 @@
       <header class="topbar">
         <h1>{% block page_title %}Dashboard{% endblock %}</h1>
         <form method="post" action="/admin/logout" style="margin:0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <button type="submit" class="btn">Sign out</button>
         </form>
       </header>

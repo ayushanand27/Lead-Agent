@@ -22,6 +22,7 @@
   <a class="btn btn-primary" href="/admin/leads/export{% if query %}?q={{ query }}{% endif %}">Export CSV</a>
    {% if sheets_sync_enabled %}
   <form method="post" action="/admin/leads/sync-sheets" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <button type="submit" class="btn">Sync all to Google Sheets</button>
   </form>
   {% endif %}
@@ -32,6 +33,9 @@
 <p class="muted" style="margin-bottom:1rem;color:var(--success)">Google Sheets sync started — refresh your sheet in a few seconds.</p>
 {% elif sync_message == 'not_configured' %}
 <p class="muted" style="margin-bottom:1rem">Set GOOGLE_SHEETS_WEBHOOK_URL on Render first.</p>
+{% endif %}
+{% if deleted %}
+<p class="muted" style="margin-bottom:1rem;color:var(--danger)">Lead deleted.</p>
 {% endif %}
 
 {% if leads %}

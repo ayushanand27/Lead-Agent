@@ -198,6 +198,25 @@ def add_lead_tags(owner_phone: str, lead_id: int, tags: str) -> dict:
     return _tool_result(success=True, data={"lead": updated})
 
 
+def delete_lead(owner_phone: str, lead_id: int) -> dict:
+    lead, error = _require_lead(owner_phone, lead_id)
+    if error:
+        return error
+
+    if not db.delete_lead(owner_phone, lead_id):
+        return _tool_result(success=False, error=f"Failed to delete lead id={lead_id}.")
+
+    db.log_action(
+        owner_phone,
+        "lead_deleted",
+        f"Deleted lead '{lead['name']}' ({lead['phone']}, id={lead_id})",
+    )
+    return _tool_result(
+        success=True,
+        data={"deleted_lead_id": lead_id, "name": lead["name"], "phone": lead["phone"]},
+    )
+
+
 def draft_followup_message(
     owner_phone: str,
     lead_id: int,

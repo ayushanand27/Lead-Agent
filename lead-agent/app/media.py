@@ -19,6 +19,12 @@ WHISPER_PROMPT = (
     "add lead Rahul phone 9876543210 from website, who have not been contacted in 2 days."
 )
 
+# Optional — Sarvam AI speech-to-text, purpose-built for Indian languages/accents
+# (Hindi, Tamil, Telugu, Bengali, Marathi, Kannada, etc.), tried before Groq Whisper
+# when SARVAM_API_KEY is set. Unset by default: no behavior change unless configured.
+SARVAM_API_URL = "https://api.sarvam.ai/speech-to-text"
+SARVAM_STT_MODEL = os.getenv("SARVAM_STT_MODEL", "saarika:v2")
+
 _MIME_TO_EXT = {
     "audio/ogg": "ogg",
     "audio/opus": "ogg",
@@ -61,6 +67,29 @@ async def download_whatsapp_media(media_id: str) -> tuple[bytes, str] | None:
         return None
 
 
+async def _transcribe_with_sarvam(audio_bytes: bytes, filename: str) -> str | None:
+    api_key = os.getenv("SARVAM_API_KEY")
+    if not api_key or not audio_bytes:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(
+                SARVAM_API_URL,
+                headers={"api-subscription-key": api_key},
+                data={"model": SARVAM_STT_MODEL, "language_code": "unknown"},
+                files={"file": (filename, audio_bytes)},
+            )
+            response.raise_for_status()
+            data = response.json()
+    except Exception:
+        logger.exception("Sarvam speech-to-text failed")
+        return None
+
+    text = (data.get("transcript") or "").strip()
+    return text or None
+
+
 def transcribe_audio_bytes(
     audio_bytes: bytes,
     filename: str = "voice.ogg",
@@ -92,4 +121,12 @@ async def transcribe_whatsapp_audio(media_id: str) -> str | None:
     if not downloaded:
         return None
     audio_bytes, ext = downloaded
-    return transcribe_audio_bytes(audio_bytes, filename=f"voice.{ext}")
+    filename = f"voice.{ext}"
+
+    if os.getenv("SARVAM_API_KEY"):
+        sarvam_text = await _transcribe_with_sarvam(audio_bytes, filename)
+        if sarvam_text:
+            return sarvam_text
+        logger.warning("Sarvam transcription unavailable, falling back to Groq Whisper")
+
+    return transcribe_audio_bytes(audio_bytes, filename=filename)

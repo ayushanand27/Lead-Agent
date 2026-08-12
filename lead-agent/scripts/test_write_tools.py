@@ -162,6 +162,10 @@ def main() -> None:
                 OWNER_B, new_lead_id, "Unauthorized message"
             ),
         ),
+        (
+            "delete_lead",
+            lead_service.delete_lead(OWNER_B, new_lead_id),
+        ),
     ]
 
     for name, result in isolation_checks:
@@ -189,6 +193,15 @@ def main() -> None:
     send_data = assert_success(send_result, "send_whatsapp_message")
     print(f"Message logged for {send_data['message_sent_to']}")
     assert "message_sent" in [e["action"] for e in db.fetch_action_log(OWNER_A)]
+
+    # 7. delete_lead — owner A deletes their own lead
+    print("\n--- 7. delete_lead ---")
+    delete_data = assert_success(
+        lead_service.delete_lead(OWNER_A, new_lead_id), "delete_lead"
+    )
+    print(f"Deleted lead id={delete_data['deleted_lead_id']} ({delete_data['name']})")
+    assert lead_service.get_lead_details(OWNER_A, new_lead_id)["success"] is False
+    assert "lead_deleted" in [e["action"] for e in db.fetch_action_log(OWNER_A)]
 
     print("\nAll write-tool checks passed.")
 

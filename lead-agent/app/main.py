@@ -18,18 +18,18 @@ from fastapi import BackgroundTasks, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import db
-from app.admin.auth import get_session_secret, is_production
+from app.admin.auth import get_admin_password, get_session_secret, is_production
 from app.admin.routes import router as admin_router
 from app.agent import handle_message
 from app.api.leads import router as api_leads_router
 from app.logging_config import configure_logging
 from app.security.headers import SecurityHeadersMiddleware
+from app.security.limiter import limiter
 from app.media import transcribe_whatsapp_audio
 from app.text_normalize import romanize_query
 from app.whatsapp import send_whatsapp_reply, verify_webhook
@@ -43,7 +43,6 @@ init_sentry()
 
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="LeadAgent",
     description="WhatsApp Lead Management Agent (MCP + Groq)",
@@ -65,6 +64,21 @@ app.include_router(admin_router, prefix="/admin")
 app.include_router(api_leads_router, prefix="/api")
 
 
+def _warn_on_weak_admin_security() -> None:
+    """Log (never block) when the admin dashboard is running with weak defaults."""
+    if is_production() and get_session_secret() == "dev-change-me-in-production":
+        logger.warning(
+            "ADMIN_SESSION_SECRET is unset — using the insecure dev default in "
+            "production. Set a random ADMIN_SESSION_SECRET on Render."
+        )
+    password = get_admin_password()
+    if password and not password.startswith("$2"):
+        logger.warning(
+            "ADMIN_DASHBOARD_PASSWORD is plain text, not a bcrypt hash. Run "
+            "scripts/hash_admin_password.py and use the hash instead."
+        )
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     db.init_db()
@@ -73,6 +87,7 @@ def on_startup() -> None:
         logger.info("Database initialized (%s)", backend)
     else:
         logger.error("Database connection check failed on startup")
+    _warn_on_weak_admin_security()
 
 
 def _verify_meta_signature(raw_body: bytes, signature_header: str | None) -> bool:

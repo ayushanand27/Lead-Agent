@@ -15,6 +15,7 @@ from app.config import get_owner_phones, primary_owner_phone
 from app.integrations.sheets import sync_lead_to_sheet
 from app.models import LeadStatus
 from app.notifications import notify_owners_new_lead
+from app.security.limiter import limiter
 
 router = APIRouter(tags=["api"])
 
@@ -47,6 +48,7 @@ async def _after_webhook_lead(lead: dict, source: str) -> None:
 
 
 @router.post("/leads")
+@limiter.limit("30/minute")
 async def capture_lead(
     request: Request,
     body: LeadCaptureBody,

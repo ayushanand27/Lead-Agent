@@ -9,6 +9,7 @@ from app.models import (
     AddLeadNoteInput,
     AddLeadTagsInput,
     CreateLeadInput,
+    DeleteLeadInput,
     DraftFollowupMessageInput,
     GetLeadDetailsInput,
     GetStaleLeadsInput,
@@ -23,8 +24,8 @@ mcp = FastMCP(
     instructions=(
         "Tools for managing sales leads for a WhatsApp-based small business. "
         "Every tool requires owner_phone — the business owner's WhatsApp number. "
-        "Write tools that send messages or mark leads converted/lost require owner "
-        "confirmation in the agent loop before execution."
+        "Write tools that send messages, mark leads converted/lost, or delete a lead "
+        "require owner confirmation in the agent loop before execution."
     ),
 )
 
@@ -157,6 +158,19 @@ def add_lead_tags(owner_phone: str, lead_id: int, tags: str) -> str:
     return _serialize(
         lead_service.add_lead_tags(params.owner_phone, params.lead_id, params.tags)
     )
+
+
+@mcp.tool(
+    name="delete_lead",
+    description=(
+        "Permanently delete a lead and its notes/history. Irreversible — the agent loop "
+        "must obtain owner confirmation before calling this tool."
+    ),
+)
+def delete_lead(owner_phone: str, lead_id: int) -> str:
+    """Permanently remove a lead."""
+    params = DeleteLeadInput(owner_phone=owner_phone, lead_id=lead_id)
+    return _serialize(lead_service.delete_lead(params.owner_phone, params.lead_id))
 
 
 @mcp.tool(

@@ -10,6 +10,7 @@
 
   <div class="card edit-lead-card">
     <form method="post" action="/admin/leads/{{ lead.id }}/edit" class="edit-lead-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <label>Status
         <select name="status">
           {% for s in statuses %}
@@ -28,6 +29,26 @@
         <a class="btn" href="/admin/leads">Cancel</a>
       </div>
     </form>
+
+    <form
+      method="post"
+      action="/admin/leads/{{ lead.id }}/delete"
+      class="edit-lead-delete-form"
+      data-confirm-delete="{{ lead.name }}"
+    >
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="btn btn-danger">Delete lead</button>
+    </form>
   </div>
 </div>
+<script>
+  document.querySelectorAll("[data-confirm-delete]").forEach(function (form) {
+    form.addEventListener("submit", function (event) {
+      var name = form.getAttribute("data-confirm-delete");
+      if (!confirm("Permanently delete " + name + "? This cannot be undone.")) {
+        event.preventDefault();
+      }
+    });
+  });
+</script>
 {% endblock %}

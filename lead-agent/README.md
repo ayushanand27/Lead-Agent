@@ -59,7 +59,7 @@ LeadAgent is an MCP-powered agent: a **real MCP server** with typed tools, a **G
                                               │ calls
                                               ▼
                                      ┌──────────────────┐
-                                     │  MCP Tools (×10) │
+                                     │  MCP Tools (×11) │
                                      │  read + write    │
                                      └────────┬─────────┘
                                               │
@@ -82,15 +82,16 @@ LeadAgent is an MCP-powered agent: a **real MCP server** with typed tools, a **G
 ## Features
 
 - **Plain English/Hindi commands** — owners interact entirely over WhatsApp
-- **Admin dashboard** — dark UI at `/admin` (phone + password): stats, lead table, **Edit** (status/notes/tags), search/filter, **Sync all to Google Sheets**, CSV export, activity log, settings
+- **Admin dashboard** — dark UI at `/admin` (phone + password): stats, lead table, **Edit** (status/notes/tags), **Delete** (with confirm), search/filter, **Sync all to Google Sheets**, CSV export, activity log, settings
 - **Multi-owner** — comma-separated `BUSINESS_OWNER_PHONES` share one lead pool (partners see the same leads)
 - **Lead tags** — via WhatsApp, dashboard edit, or webhook payload
 - **Google Sheets backup** — upsert by lead `id` (no duplicate rows on re-sync); Apps Script webhook
 - **Lead capture webhook** — `POST /api/leads` for website forms, Zapier, IndiaMART (`X-Lead-Webhook-Secret`)
 - **Webhook WhatsApp alert** — `NOTIFY_OWNERS_ON_WEBHOOK=true` pings all owners on new lead
 - **Daily summary** — cron at 9 AM IST sends stale-lead counts to every owner (`GET` or `POST` + `CRON_SECRET`)
-- **10 MCP tools** — 4 read + 6 write (`add_lead_tags` included)
-- **Confirmation flow** — destructive actions (send message, mark `converted`/`lost`) require an explicit YES before execution
+- **11 MCP tools** — 4 read + 7 write (`add_lead_tags`, `delete_lead` included)
+- **Voice notes** — WhatsApp voice → text, optionally via Sarvam AI (Indian languages/accents) with automatic fallback to Groq Whisper
+- **Confirmation flow** — destructive actions (send message, mark `converted`/`lost`, delete a lead) require an explicit YES before execution
 - **Owner isolation** — each deploy is scoped to registered owner phones; partners in the same business share data
 - **Full audit log** — every write recorded in `action_log` with human-readable details
 - **Persistent storage** — leads survive redeploys via Supabase Postgres (not ephemeral SQLite)
@@ -133,6 +134,8 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
+
+Prefer a reproducible install matching the exact versions this repo is tested against? Use `pip install -r requirements-lock.txt` instead — `requirements.txt` only pins floor versions, so a fresh install months from now can otherwise resolve different (and untested) transitive dependency versions.
 
 ### 2. Configure environment
 
@@ -178,7 +181,8 @@ Register in Cursor or Claude Desktop, or inspect with `mcp dev app/mcp_server.py
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GROQ_API_KEY` | Yes (prod) | Groq API key for the agent loop (`openai/gpt-oss-120b`) |
+| `GROQ_API_KEY` | Yes (prod) | Groq API key for the agent loop (`openai/gpt-oss-120b`) and Whisper voice transcription |
+| `SARVAM_API_KEY` | Optional | Sarvam AI speech-to-text — tried before Groq Whisper on voice notes, better accuracy for Indian languages/accents beyond Hindi (Tamil, Telugu, Bengali, Marathi, Kannada, etc.). Falls back to Whisper automatically if unset or if the call fails |
 | `WHATSAPP_TOKEN` | Yes (prod) | Meta **System User** permanent token (not 24h API Setup token) |
 | `WHATSAPP_PHONE_NUMBER_ID` | Yes (prod) | WhatsApp Business phone number ID from Meta dashboard |
 | `WHATSAPP_VERIFY_TOKEN` | Yes (prod) | Arbitrary string for `GET /webhook` subscription verification |
@@ -198,6 +202,7 @@ Register in Cursor or Claude Desktop, or inspect with `mcp dev app/mcp_server.py
 | `STALE_LEAD_DAYS` | Optional | Days without contact before "stale" (default: `2`) |
 | `NOTIFY_OWNERS_ON_WEBHOOK` | Optional | WhatsApp alert owners on `POST /api/leads` (default: `true`) |
 | `SENTRY_DSN` | Optional | Error monitoring (Sentry) |
+| `ENVIRONMENT` | Optional | Set to `production` to force HTTPS-only cookies + startup security warnings on non-Render hosts (Render sets its own `RENDER=true`, which already triggers this) |
 
 ### Render database setup (recommended)
 
@@ -281,6 +286,7 @@ https://lead-agent-to63.onrender.com/health
 | `/admin/login` | GET/POST | Dashboard login (phone + `ADMIN_DASHBOARD_PASSWORD`) |
 | `/admin/leads` | GET | Lead list, search, filter |
 | `/admin/leads/{id}/edit` | GET/POST | Edit status, notes, tags (+ Sheets sync) |
+| `/admin/leads/{id}/delete` | POST | Permanently delete a lead (JS confirm + CSRF token) |
 | `/admin/leads/sync-sheets` | POST | Backfill all leads to Google Sheets |
 | `/admin/leads/export` | GET | CSV download |
 | `/admin/activity` | GET | Audit log |
@@ -324,7 +330,7 @@ pytest tests/ -v
 | Multi-tenant isolation | `owner_phone` on every query |
 | Human-in-the-loop | Confirmation before send / terminal status |
 | Audit logging | `action_log` table |
-| RLS on database | Supabase `leads` + `action_log` |
+| RLS on database | Enabled on `leads` + `action_log`, but no policies defined — it's a fail-closed backstop if the anon key ever leaks, not the isolation mechanism. Real tenant isolation is enforced in application code (`owner_phone` scoping, see `Multi-tenant isolation` above) |
 | Parameterized SQL | No string-interpolated queries |
 | Pinned Python runtime | `runtime.txt` → 3.11.11 |
 
@@ -332,8 +338,12 @@ pytest tests/ -v
 - Meta **test number** — production WABA + Business Verification required for real customers (see [DEPLOY.md §7](DEPLOY.md#7-going-to-real-production-later))
 - No broadcast campaigns or template blasts (not a WATI clone)
 - Sentry optional
+- `ADMIN_DASHBOARD_PASSWORD` still accepts a legacy plain-text value in addition to a bcrypt hash for backward compatibility — the app now logs a startup warning when it's plain text; run `scripts/hash_admin_password.py` and use the hash for any paid deploy
+- CSRF tokens cover the authenticated dashboard forms (edit lead, delete lead, sync-to-sheets, logout); the pre-login form doesn't carry one, since there's no session yet to forge
 
-**Verified live (June 2026):** multi-owner cron, dashboard edit + Sheets upsert, webhook alerts.
+**Verified 12 Aug 2026:** full suite run clean — `pytest tests/` (63/63), `test_read_tools.py`, `test_write_tools.py`, `test_webhook.py` (7/7 incl. HMAC + admin login flow), and `test_agent.py` against the live Groq API (5/5, real tool-calling + confirmation flow). Plus the always-on GitHub Actions CI on every push to `main`.
+
+**Fixed 11 Aug 2026** (previously listed here as gaps): `POST /api/leads` is now rate-limited the same as the WhatsApp webhook (30/min/IP); dependency versions are now locked (see `requirements-lock.txt`) so a fresh install reproduces the exact tested environment instead of "whatever's newest today"; admin dashboard forms now carry session-bound CSRF tokens.
 
 ---
 
@@ -347,6 +357,7 @@ pytest tests/ -v
 | `send a follow up to Priya` | Drafts message → shows preview → sends only after YES |
 | `add note to Amit: called twice, no answer` | Appends timestamped note to Amit's lead |
 | `tag Priya as hot and referral` | Adds comma-separated tags via `add_lead_tags` |
+| `delete Ramesh` / `Ramesh ko hata do` | Finds the lead → asks YES → permanently deletes on confirm |
 
 Hindi works too — the agent replies in the same language the owner uses.
 
@@ -358,13 +369,14 @@ Hindi works too — the agent replies in the same language the owner uses.
 |---------|----------------|
 | **Owner isolation** | Every `leads` / `action_log` query uses `WHERE owner_phone = ?`; lead writes use `WHERE id = ? AND owner_phone = ?` |
 | **Webhook authenticity** | `X-Hub-Signature-256` verified with `hmac.compare_digest` + `WHATSAPP_APP_SECRET` |
-| **Confirmation gate** | `send_whatsapp_message` and terminal status changes stored in `PendingActionStore` until owner confirms |
+| **Confirmation gate** | `send_whatsapp_message`, terminal status changes, and `delete_lead` stored in `PendingActionStore` until owner confirms |
 | **Audit trail** | `action_log` records every write (`lead_created`, `status_updated`, `note_added`, `message_sent`) |
-| **Database RLS** | Row Level Security enabled on Supabase tables; no public API policies |
+| **Database RLS** | Enabled on Supabase tables as a fail-closed backstop (no policies defined); not the primary isolation mechanism — see Owner isolation above |
 | **Safe errors** | Generic messages to owners; details logged server-side only |
 | **SQL injection** | Parameterized queries only — no string-interpolated SQL |
-| **Rate limiting** | 30 requests/minute per IP on `POST /webhook`; admin login rate limit |
-| **Admin hardening** | bcrypt passwords, optional IP allowlist, security headers, login audit |
+| **Rate limiting** | 30 requests/minute per IP on both `POST /webhook` and `POST /api/leads` (shared `slowapi` limiter, see `app/security/limiter.py`); admin login capped at 5 attempts/15 min per IP. All counters are in-memory (single-instance only) |
+| **Admin hardening** | bcrypt passwords supported (`scripts/hash_admin_password.py`) — legacy plain-text `ADMIN_DASHBOARD_PASSWORD` is still accepted for backward compatibility, but now logs a startup warning; optional IP allowlist, security headers, login audit |
+| **CSRF** | Session-bound tokens (`app/security/csrf.py`) on authenticated dashboard forms — edit lead, delete lead, sync-to-sheets, logout. The pre-login form is intentionally excluded: no session exists yet to forge, and it's already behind IP allowlist + rate-limited lockout |
 
 Run isolation tests anytime:
 
@@ -445,6 +457,18 @@ cd lead-agent && pytest tests/ -v
 ```
 
 Covers owner isolation, admin security, multi-owner pool, Sheets sync serialization.
+
+**Last full run — 11 Aug 2026, all green:**
+
+| Suite | Result |
+|-------|--------|
+| `pytest tests/` | 63/63 passed (incl. `test_csrf.py` — dashboard edit/delete/logout — `delete_lead` isolation, `test_media.py` Sarvam fallback) |
+| `scripts/test_read_tools.py` | passed |
+| `scripts/test_write_tools.py` | passed (incl. cross-owner write isolation, `delete_lead`) |
+| `scripts/test_webhook.py` | 7/7 passed (signature validation, admin login, health checks) |
+| `scripts/test_agent.py` | 5/5 passed against the live Groq API (tool-calling + confirmation flow) |
+
+Run everything with your own virtualenv activated (`.venv\Scripts\activate` on Windows) — a stray global Python install with unrelated packages on `PATH` can resolve incompatible transitive dependency versions and produce false failures that don't reflect this repo's actual state.
 
 ---
 
