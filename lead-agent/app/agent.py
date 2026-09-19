@@ -44,6 +44,8 @@ WELCOME_REPLY = (
     "• list all my leads\n"
     "• 2 din se contact nahi hua kaun?\n"
     "• add lead Rahul phone 9876543210 from website\n"
+    "• add lead Rahul 9876543210 from website\n"
+    "• add lead Rahul from muj — then send phone on next message\n"
     "• search Priya\n"
     "• mark Rahul as warm\n\n"
     "Hindi ya English — jo aapko easy lage."
@@ -821,6 +823,148 @@ def _format_create_lead_result(result: dict) -> str:
     )
 
 
+def _normalize_lead_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone)
+    if 8 <= len(digits) <= 15:
+        return digits
+    return ""
+
+
+def _extract_phone_from_text(text: str) -> str | None:
+    stripped = text.strip()
+    if re.fullmatch(r"[\d\s\-+]+", stripped):
+        normalized = _normalize_lead_phone(stripped)
+        return normalized or None
+    match = re.search(r"(?<!\d)(\+?\d[\d\s\-]{6,}\d)(?!\d)", stripped)
+    if not match:
+        return None
+    normalized = _normalize_lead_phone(match.group(1))
+    return normalized or None
+
+
+def _extract_from_source(text: str) -> str | None:
+    match = re.search(r"\bfrom\s+(.+?)(?:\.|$)", text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def _is_phone_only_message(text: str) -> bool:
+    if not _extract_phone_from_text(text):
+        return False
+    return not re.search(r"[A-Za-z]{2,}", text)
+
+
+def _set_create_draft(
+    owner_phone: str,
+    *,
+    existing: dict[str, Any] | None = None,
+    **fields: Any,
+) -> None:
+    payload: dict[str, Any] = {"tool": DRAFT_CREATE_LEAD_TOOL}
+    if existing:
+        for key in ("name", "source", "phone"):
+            if existing.get(key):
+                payload[key] = existing[key]
+    for key, value in fields.items():
+        if value is not None and str(value).strip():
+            payload[key] = str(value).strip()
+    pending_store.set_pending(owner_phone, payload)
+
+
+def _handle_create_lead_draft(owner_phone: str, pending: dict[str, Any], text: str) -> str:
+    name = str(pending.get("name") or "").strip()
+    source = str(pending.get("source") or "").strip()
+    phone = str(pending.get("phone") or "").strip()
+
+    if text.strip().lower() in {"cancel", "stop", "nevermind", "never mind", "mat karo"}:
+        pending_store.clear_pending(owner_phone)
+        return "Okay, cancelled adding that lead."
+
+    extracted_phone = _extract_phone_from_text(text)
+    extracted_source = _extract_from_source(text)
+
+    if extracted_phone:
+        phone = extracted_phone
+    if extracted_source:
+        source = extracted_source
+    elif not extracted_source and not _is_phone_only_message(text):
+        cleaned = text.strip()
+        if name and not source and len(cleaned.split()) <= 4:
+            source = cleaned
+        elif not name and len(cleaned.split()) <= 3:
+            name = cleaned
+
+    if name and phone and source:
+        pending_store.clear_pending(owner_phone)
+        result = lead_service.create_lead(owner_phone, name, phone, source)
+        return _format_create_lead_result(result)
+
+    _set_create_draft(
+        owner_phone,
+        existing=pending,
+        name=name or None,
+        source=source or None,
+        phone=phone or None,
+    )
+
+    if name and not phone:
+        return f"Send {name}'s phone number (digits only, e.g. 9876543210)."
+    if name and phone and not source:
+        return (
+            f"What's the source for {name}? "
+            "(e.g. muj, WhatsApp, LinkedIn, IndiaMART)"
+        )
+    if not name:
+        return "What name should I save for this lead?"
+    return (
+        "I still need name, phone, and source. "
+        "Try: add lead Rahul 9876543210 from WhatsApp"
+    )
+
+
+def _try_start_create_draft_fast_path(owner_phone: str, message_text: str) -> str | None:
+    text = message_text.strip()
+
+    match = _ADD_LEAD_NO_PHONE_RE.match(text)
+    if match:
+        name, source = match.group(1).strip(), match.group(2).strip()
+        if _extract_phone_from_text(name):
+            return None
+        _set_create_draft(owner_phone, name=name, source=source)
+        return (
+            f"Sure — send {name}'s phone number "
+            "(digits only, e.g. 9876543210)."
+        )
+
+    match = _SAVE_LEAD_FOR_PHONE_RE.match(text)
+    if match:
+        name, source = match.group(1).strip(), match.group(2).strip()
+        _set_create_draft(owner_phone, name=name, source=source)
+        return f"Got it. Send the phone number for {name} ({source})."
+
+    match = _SAVE_LEAD_NAME_ONLY_RE.match(text)
+    if match:
+        name = match.group(1).strip()
+        if name.lower() in {"lead", "this"}:
+            return None
+        _set_create_draft(owner_phone, name=name)
+        return f"Send the phone number for {name}."
+
+    match = _CREATE_LEAD_NEED_SOURCE_RE.match(text)
+    if match:
+        name = match.group(1).strip()
+        phone = _normalize_lead_phone(match.group(2))
+        if phone:
+            _set_create_draft(owner_phone, name=name, phone=phone)
+            return (
+                f"What's the source for {name}? "
+                "(e.g. muj, WhatsApp, LinkedIn)"
+            )
+
+    return None
+
+
 _DIRECT_REPLY_TOOLS: dict[str, Any] = {
     "list_leads": _format_list_results,
     "search_leads": _format_search_results,
@@ -840,6 +984,12 @@ def _try_search_fast_path(
     if any(phrase in lower for phrase in _SEARCH_BLOCK_PHRASES):
         return None
 
+    if _is_phone_only_message(message_text):
+        phone = _extract_phone_from_text(message_text)
+        if phone:
+            result = lead_service.search_leads(owner_phone, phone)
+            return _format_search_results(result)
+
     query = _extract_search_query(message_text, voice=voice)
     if not query:
         return None
@@ -848,8 +998,30 @@ def _try_search_fast_path(
     return _format_search_results(result)
 
 
+DRAFT_CREATE_LEAD_TOOL = "draft_create_lead"
+
 _CREATE_LEAD_RE = re.compile(
     r"add\s+lead\s+(.+?)\s+phone\s+([+\d][\d\s]{4,})\s+from\s+(.+)",
+    re.IGNORECASE,
+)
+_CREATE_LEAD_LOOSE_RE = re.compile(
+    r"^add\s+lead\s+(.+?)\s+([+]?\d{8,15})\s+from\s+(.+?)\s*$",
+    re.IGNORECASE,
+)
+_CREATE_LEAD_NEED_SOURCE_RE = re.compile(
+    r"^add\s+lead\s+(.+?)\s+([+]?\d{8,15})\s*$",
+    re.IGNORECASE,
+)
+_ADD_LEAD_NO_PHONE_RE = re.compile(
+    r"^add\s+lead\s+(.+?)\s+from\s+(.+?)(?:\s+without\s+phone(?:\s+no)?)?\.?\s*$",
+    re.IGNORECASE,
+)
+_SAVE_LEAD_FOR_PHONE_RE = re.compile(
+    r"^save\s+(\S+)\s+(\S+)\s+(?:for\s+)?(?:this\s+)?phone(?:\s+no)?\.?\s*$",
+    re.IGNORECASE,
+)
+_SAVE_LEAD_NAME_ONLY_RE = re.compile(
+    r"^save\s+(.+?)\s+(?:for\s+)?(?:this\s+)?phone(?:\s+no)?\.?\s*$",
     re.IGNORECASE,
 )
 
@@ -898,13 +1070,18 @@ def _try_stale_fast_path(owner_phone: str, message_text: str) -> str | None:
 
 
 def _try_create_lead_fast_path(owner_phone: str, message_text: str) -> str | None:
-    match = _CREATE_LEAD_RE.search(message_text.strip())
-    if not match:
-        return None
-    name, phone, source = match.group(1).strip(), match.group(2).strip(), match.group(3).strip()
-    phone = re.sub(r"[\s\-]", "", phone)
-    result = lead_service.create_lead(owner_phone, name, phone, source)
-    return _format_create_lead_result(result)
+    text = message_text.strip()
+    for pattern in (_CREATE_LEAD_LOOSE_RE, _CREATE_LEAD_RE):
+        match = pattern.search(text)
+        if match:
+            name = match.group(1).strip()
+            phone = _normalize_lead_phone(match.group(2))
+            source = match.group(3).strip()
+            if not phone:
+                return None
+            result = lead_service.create_lead(owner_phone, name, phone, source)
+            return _format_create_lead_result(result)
+    return None
 
 
 def _try_status_update_fast_path(owner_phone: str, message_text: str) -> str | None:
@@ -1240,6 +1417,10 @@ async def handle_message(
         return WELCOME_REPLY
 
     pending = pending_store.get_pending(owner_phone)
+    if pending is not None and pending.get("tool") == DRAFT_CREATE_LEAD_TOOL:
+        return _handle_create_lead_draft(owner_phone, pending, text)
+
+    pending = pending_store.get_pending(owner_phone)
     if pending is not None:
         if is_confirmation_message(text):
             pending_store.clear_pending(owner_phone)
@@ -1261,6 +1442,10 @@ async def handle_message(
     create_path = _try_create_lead_fast_path(owner_phone, text)
     if create_path is not None:
         return create_path
+
+    draft_path = _try_start_create_draft_fast_path(owner_phone, text)
+    if draft_path is not None:
+        return draft_path
 
     status_path = _try_status_update_fast_path(owner_phone, text)
     if status_path is not None:

@@ -73,6 +73,23 @@ LeadAgent is an MCP-powered agent: a **real MCP server** with typed tools, a **G
 
 **Request flow:** WhatsApp message → HMAC-validated webhook → `handle_message()` → Groq selects MCP tools → Postgres read/write → confirmation gate for sends & terminal status changes → reply sent back on WhatsApp.
 
+### Webhooks vs WhatsApp chat (common confusion)
+
+| Endpoint | Who calls it | Purpose |
+|----------|----------------|---------|
+| `GET/POST /webhook` | **Meta** (WhatsApp Cloud API) | Owner messages to the bot; bot replies on WhatsApp. Requires `WHATSAPP_APP_SECRET` + valid token. |
+| `POST /api/leads` | **Your site / Zapier / IndiaMART** | New lead capture from forms (header `X-Lead-Webhook-Secret`). Not used for owner chat commands. |
+| `GET/POST /internal/cron/daily-summary` | **cron-job.org** (or you) | Morning stale-lead summary (`CRON_SECRET`). |
+
+If the bot **replies** in WhatsApp but behaves oddly (e.g. treats a phone number as search), the Meta webhook is fine — the issue is usually **agent fast paths** or **multi-turn context**, not a broken webhook.
+
+### How owner messages are handled
+
+1. **Fast paths (no Groq)** — reliable demo commands: `list all leads`, `search Priya`, `add lead X phone 99… from website`, `add lead X 99… from source`, `mark X as warm`, stale queries, etc.
+2. **Multi-turn add lead** — e.g. `add lead aryan from muj without phone` → bot asks for digits → you send `89076968382` → lead is created (stored in `pending_actions` as a draft, not a YES/NO confirmation).
+3. **Groq agent loop** — everything else; may ask clarifying questions but has no memory unless you use the draft phrases above.
+4. **YES confirmation** — send message to customer, delete lead, mark converted/lost.
+
 **Also:** `POST /api/leads` (Zapier/IndiaMART) → DB + optional Sheets sync + owner WhatsApp alert. Admin dashboard edits trigger Sheets upsert by lead `id`. Daily cron sends stale-lead summary to every owner phone.
 
 **Production stack:** Render (app) + Supabase (database) + Meta WhatsApp Cloud API + Groq + cron-job.org (scheduled summary).
