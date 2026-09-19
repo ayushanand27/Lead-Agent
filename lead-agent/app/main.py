@@ -32,6 +32,7 @@ from app.security.headers import SecurityHeadersMiddleware
 from app.security.limiter import limiter
 from app.media import transcribe_whatsapp_audio
 from app.text_normalize import romanize_query
+from app.summary import send_daily_summaries
 from app.whatsapp import send_whatsapp_reply, verify_webhook
 
 load_dotenv()
@@ -81,12 +82,22 @@ def _warn_on_weak_admin_security() -> None:
 
 @app.on_event("startup")
 def on_startup() -> None:
-    db.init_db()
+    try:
+        db.init_db()
+    except Exception:
+        logger.exception(
+            "Database schema init failed — check DATABASE_URL, DATABASE_PASSWORD, "
+            "and that your Supabase project is not paused"
+        )
     if db.check_connection():
         backend = "postgres" if os.getenv("DATABASE_URL") else "sqlite"
         logger.info("Database initialized (%s)", backend)
     else:
-        logger.error("Database connection check failed on startup")
+        err = db.get_last_connection_error()
+        logger.error(
+            "Database connection check failed on startup%s",
+            f": {err}" if err else "",
+        )
     _warn_on_weak_admin_security()
 
 
@@ -159,6 +170,15 @@ async def _process_incoming_message(
         if not text:
             return
 
+        if not db.check_connection():
+            logger.error("Skipping agent — database unavailable for owner %s", owner_phone)
+            await send_whatsapp_reply(
+                owner_phone,
+                "LeadAgent database is temporarily unavailable. "
+                "Please try again in a few minutes or check the admin dashboard.",
+            )
+            return
+
         logger.info("Processing message from owner %s", owner_phone)
         reply = await handle_message(owner_phone, text, from_voice=bool(audio_media_id))
         sent = await send_whatsapp_reply(owner_phone, reply)
@@ -199,6 +219,36 @@ def health() -> dict[str, Any]:
         "database": "connected" if db.check_connection() else "unavailable",
         "cron_configured": bool(os.getenv("CRON_SECRET", "").strip()),
     }
+
+
+@app.get("/internal/ops/status")
+def ops_status(request: Request) -> JSONResponse:
+    """
+    Operator diagnostics (requires CRON_SECRET via X-Cron-Secret or ?secret=).
+    Use when /health shows database unavailable or WhatsApp stops replying.
+    """
+    secret = os.getenv("CRON_SECRET", "").strip()
+    provided = request.headers.get("X-Cron-Secret", "").strip()
+    if not provided:
+        provided = request.query_params.get("secret", "").strip()
+    if not secret or not secrets.compare_digest(provided, secret):
+        return JSONResponse(status_code=403, content={"error": "Forbidden"})
+
+    db_ok = db.check_connection()
+    body: dict[str, Any] = {
+        "status": "ok" if db_ok else "degraded",
+        "database": "connected" if db_ok else "unavailable",
+        "database_error": db.get_last_connection_error(),
+        "cron_configured": bool(secret),
+        "admin_password_configured": bool(get_admin_password()),
+        "recovery_configured": bool(os.getenv("ADMIN_RECOVERY_SECRET", "").strip() or secret),
+        "whatsapp_token_set": bool(os.getenv("WHATSAPP_TOKEN", "").strip()),
+        "whatsapp_phone_id_set": bool(os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()),
+        "whatsapp_app_secret_set": bool(os.getenv("WHATSAPP_APP_SECRET", "").strip()),
+        "groq_api_key_set": bool(os.getenv("GROQ_API_KEY", "").strip()),
+        "owner_phones_configured": bool(os.getenv("BUSINESS_OWNER_PHONES", "").strip()),
+    }
+    return JSONResponse(content=body)
 
 
 @app.get("/health/ready")

@@ -19,6 +19,8 @@ load_dotenv()
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "leads.db"
 
+_last_connection_error: str | None = None
+
 _POSTGRES_INIT_SQL = """
 CREATE TABLE IF NOT EXISTS leads (
     id BIGSERIAL PRIMARY KEY,
@@ -96,17 +98,51 @@ def _use_postgres() -> bool:
     return bool(os.getenv("DATABASE_URL"))
 
 
+def _postgres_connect_params() -> dict[str, Any]:
+    """Build psycopg connect kwargs — pooler-safe, DATABASE_PASSWORD overrides URI password."""
+    import psycopg.conninfo as conninfo
+
+    raw = os.environ["DATABASE_URL"].strip()
+    params = conninfo.conninfo_to_dict(raw)
+    override_password = os.getenv("DATABASE_PASSWORD", "").strip()
+    if override_password:
+        params["password"] = override_password
+    if not params.get("sslmode"):
+        params["sslmode"] = "require"
+    return params
+
+
 def _connect_postgres():
     """Connect to Supabase/Postgres. Use DATABASE_PASSWORD for special chars on Render."""
     import psycopg
     from psycopg.rows import dict_row
 
-    url = os.environ["DATABASE_URL"].strip()
-    password = os.getenv("DATABASE_PASSWORD", "").strip()
-    kwargs: dict = {"row_factory": dict_row}
-    if password:
-        kwargs["password"] = password
-    return psycopg.connect(url, **kwargs)
+    global _last_connection_error
+    params = _postgres_connect_params()
+    try:
+        return psycopg.connect(
+            **params,
+            row_factory=dict_row,
+            connect_timeout=15,
+            prepare_threshold=None,  # required for Supabase transaction pooler (port 6543)
+        )
+    except Exception as exc:
+        _last_connection_error = _sanitize_db_error(str(exc))
+        raise
+
+
+def _sanitize_db_error(message: str) -> str:
+    """Strip credentials from driver error text before logging or API responses."""
+    sanitized = message
+    for key in ("DATABASE_PASSWORD", "DATABASE_URL"):
+        value = os.getenv(key, "")
+        if value and len(value) > 4 and value in sanitized:
+            sanitized = sanitized.replace(value, "***")
+    return sanitized[:400]
+
+
+def get_last_connection_error() -> str | None:
+    return _last_connection_error
 
 
 def get_db_path() -> Path:
@@ -210,11 +246,14 @@ _LEAD_COLUMNS = (
 
 def check_connection() -> bool:
     """Return True if the database is reachable (used by /health/ready)."""
+    global _last_connection_error
     try:
         with get_connection() as conn:
             conn.execute(_q("SELECT 1"))
+        _last_connection_error = None
         return True
-    except Exception:
+    except Exception as exc:
+        _last_connection_error = _sanitize_db_error(str(exc))
         return False
 
 

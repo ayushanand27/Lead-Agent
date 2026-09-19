@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import secrets
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -14,12 +15,14 @@ from app import db
 from app.admin.auth import (
     dashboard_context,
     get_admin_password,
+    get_admin_recovery_secret,
     get_session_owner,
     is_production,
     login_owner,
     logout_owner,
     require_owner,
 )
+from app.security.passwords import hash_password
 from app.config import get_owner_phones
 from app.integrations.sheets import (
     is_sheets_sync_enabled,
@@ -83,6 +86,109 @@ async def login_page(request: Request) -> HTMLResponse:
             {"error": "Admin dashboard is not configured (set ADMIN_DASHBOARD_PASSWORD)."},
         )
     return templates.TemplateResponse(request, "admin/login.html", {"error": None})
+
+
+@router.get("/recover", response_class=HTMLResponse)
+async def recover_password_page(request: Request) -> HTMLResponse:
+    blocked = _guard_admin_ip(request)
+    if blocked:
+        return blocked
+    recovery_secret = get_admin_recovery_secret()
+    if not recovery_secret:
+        return templates.TemplateResponse(
+            request,
+            "admin/recover.html",
+            {
+                "error": (
+                    "Password recovery is not configured. Set ADMIN_RECOVERY_SECRET "
+                    "(or CRON_SECRET) on Render, then try again."
+                ),
+                "success": None,
+            },
+        )
+    return templates.TemplateResponse(
+        request,
+        "admin/recover.html",
+        {"error": None, "success": None},
+    )
+
+
+@router.post("/recover", response_model=None)
+async def recover_password_submit(
+    request: Request,
+    recovery_secret: str = Form(...),
+    new_password: str = Form(...),
+):
+    blocked = _guard_admin_ip(request)
+    if blocked:
+        return blocked
+
+    expected = get_admin_recovery_secret()
+    if not expected:
+        return templates.TemplateResponse(
+            request,
+            "admin/recover.html",
+            {
+                "error": "Password recovery is not configured on this server.",
+                "success": None,
+            },
+            status_code=503,
+        )
+
+    client_ip = get_client_ip(request)
+    if is_login_blocked(client_ip):
+        return templates.TemplateResponse(
+            request,
+            "admin/recover.html",
+            {
+                "error": "Too many attempts. Try again in 15 minutes.",
+                "success": None,
+            },
+            status_code=429,
+        )
+
+    if not secrets.compare_digest(recovery_secret.strip(), expected):
+        record_login_failure(client_ip)
+        log_admin_event("unknown", "admin_recovery_failed", f"Bad recovery secret from {client_ip}")
+        return templates.TemplateResponse(
+            request,
+            "admin/recover.html",
+            {
+                "error": "Invalid recovery secret.",
+                "success": None,
+            },
+            status_code=403,
+        )
+
+    if len(new_password.strip()) < 8:
+        return templates.TemplateResponse(
+            request,
+            "admin/recover.html",
+            {
+                "error": "Use at least 8 characters for the new dashboard password.",
+                "success": None,
+            },
+            status_code=400,
+        )
+
+    clear_login_failures(client_ip)
+    hashed = hash_password(new_password.strip())
+    log_admin_event("admin", "admin_recovery_success", f"New password hash generated from {client_ip}")
+    return templates.TemplateResponse(
+        request,
+        "admin/recover.html",
+        {
+            "error": None,
+            "success": {
+                "env_line": f"ADMIN_DASHBOARD_PASSWORD={hashed}",
+                "hint": (
+                    "Copy the line below into Render → Environment → "
+                    "ADMIN_DASHBOARD_PASSWORD, save, then wait for redeploy. "
+                    "Sign in with your WhatsApp owner number and the new password."
+                ),
+            },
+        },
+    )
 
 
 @router.post("/login", response_model=None)

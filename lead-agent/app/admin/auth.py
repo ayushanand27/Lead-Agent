@@ -24,6 +24,18 @@ def get_session_secret() -> str:
     return os.getenv("ADMIN_SESSION_SECRET", "dev-change-me-in-production")
 
 
+def get_admin_recovery_secret() -> str | None:
+    """
+    Secret for /admin/recover (reset forgotten dashboard password).
+    Prefer ADMIN_RECOVERY_SECRET; falls back to CRON_SECRET when unset.
+    """
+    dedicated = os.getenv("ADMIN_RECOVERY_SECRET", "").strip()
+    if dedicated:
+        return dedicated
+    cron = os.getenv("CRON_SECRET", "").strip()
+    return cron or None
+
+
 def is_production() -> bool:
     return os.getenv("RENDER") == "true" or os.getenv("ENVIRONMENT") == "production"
 

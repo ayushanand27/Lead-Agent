@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reset admin password — LeadAgent</title>
+  <link rel="stylesheet" href="/static/admin.css" />
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <h1>Reset dashboard password</h1>
+      <p class="muted">
+        Use your deployment recovery secret (same as daily cron, or <code>ADMIN_RECOVERY_SECRET</code>).
+      </p>
+      {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success">
+        <p>{{ success.hint }}</p>
+        <pre class="env-block">{{ success.env_line }}</pre>
+        <p><a href="/admin/login">Back to sign in</a></p>
+      </div>
+      {% else %}
+      <form method="post" action="/admin/recover">
+        <label>
+          Recovery secret
+          <input type="password" name="recovery_secret" autocomplete="off" required />
+        </label>
+        <label>
+          New dashboard password (min 8 characters)
+          <input type="password" name="new_password" minlength="8" required />
+        </label>
+        <button type="submit" class="btn btn-primary">Generate Render env value</button>
+      </form>
+      <p class="muted" style="margin-top:1rem;">
+        <a href="/admin/login">← Back to sign in</a>
+      </p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
